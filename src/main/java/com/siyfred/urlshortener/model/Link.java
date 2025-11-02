@@ -53,8 +53,8 @@ public class Link {
         return shortCode;
     }
 
-    public void setShortCode(String shortUrl) {
-        this.shortCode = shortUrl;
+    public void setShortCode(String shortCode) {
+        this.shortCode = shortCode;
     }
 
     public LocalDateTime getCreatedAt() {
