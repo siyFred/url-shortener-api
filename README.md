@@ -155,3 +155,29 @@ Redireciona o usuário para a URL original.
     * `301 MOVED_PERMANENTLY`: Redireciona o navegador para a `longUrl` correspondente.
     * `404 NOT_FOUND`: Se o `shortCode` não existir.
 
+## Tasks (Roadmap)
+
+### MVP
+* [x] **API REST:** Criar endpoints `POST` (para criar) e `GET` (para redirecionar).
+* [x] **Banco de Dados:** Configurar `Spring Data JPA` para persistir os links no banco de dados `PostgreSQL`.
+* [x] **Infraestrutura:** Usar `Docker` para gerenciar o ambiente de banco de dados.
+* [x] **Formatação:** Garantir que as URLs sejam salvas em formato absoluto (com `https://`).
+* [x] **Conexão:** Configurar `CORS` para permitir o consumo pelo frontend.
+
+### Escalamento do projeto
+* [ ] **Otimização de Chaves (Base62)**
+    * Substituir a geração de `shortCode` (UUID) pelo algoritmo **Base62** baseado no ID da entidade, garantindo performance e ausência de colisões.
+
+* [ ] **Cache de Leitura (Redis)**
+    * Implementar **Redis** para cachear os redirecionamentos. A maioria das leituras (`GET`) será servida em milissegundos, sem tocar no PostgreSQL.
+
+* [ ] **Analytics Assíncrono (RabbitMQ)**
+    * Adicionar contagem de cliques. Para não adicionar latência ao redirect, a lógica de `UPDATE` no banco será desacoplada usando **RabbitMQ**.
+
+* [ ] **Autenticação e Dashboard**
+    * Implementar **Spring Security (JWT)** para permitir login e registro de usuários.
+    * Criar endpoints de CRUD (`GET /api/links`, `DELETE /api/links/{id}`) para um dashboard onde o usuário possa gerenciar seus próprios links.
+
+* [ ] **Deploy em Container (Docker)**
+    * Criar o `Dockerfile` da aplicação Spring Boot para produção (usando multi-stage builds).
+    * Criar um `docker-compose.yml` de produção para orquestrar `API`, `PostgreSQL`, `Redis` e `RabbitMQ`.
