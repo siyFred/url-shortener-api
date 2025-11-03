@@ -166,8 +166,8 @@ Redireciona o usuário para a URL original.
 
 ### Escalamento do projeto
 
-## Testes devem e serão refatorados a cada fase do projeto
-* [ ] **Testes Unitários (JUnit + Mockito):**
+#### *Nota: Testes devem e serão refatorados a cada fase do projeto*
+* [x] **Testes Unitários (JUnit + Mockito):**
     * **O que:** Testar a camada de `Service` (`LinkService`) em isolamento.
     * **Garantir que:** A lógica de `formatUrl` (adicionar `https://`) funciona.
     * **Garantir que:** O `LinkService` chama o `linkRepository.save()` corretamente.
