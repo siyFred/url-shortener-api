@@ -171,7 +171,7 @@ Redireciona o usuário para a URL original.
     * **O que:** Testar a camada de `Service` (`LinkService`) em isolamento.
     * **Garantir que:** A lógica de `formatUrl` (adicionar `https://`) funciona.
     * **Garantir que:** O `LinkService` chama o `linkRepository.save()` corretamente.
-* [ ] **Testes de Integração (JUnit + Testcontainers):**
+* [x] **Testes de Integração (JUnit + Testcontainers):**
     * **O que:** Testar o fluxo completo (`Controller` -> `Service` -> `Banco`).
     * **Garantir que:** Uma chamada `POST /api/mvp/shorten` *realmente* salva a entidade no banco de dados do Testcontainer.
 
