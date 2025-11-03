@@ -21,12 +21,24 @@ public class LinkService {
 
     public Link createShortUrl(String longUrl) {
         // TODO: usar base62 para garantir unicidade com previsibilidade sem precisar consultar a db
+        String formattedUrl = formatUrl(longUrl);
         String shortCode;
         do {
             shortCode = UUID.randomUUID().toString().substring(0, 7);
         } while(linkRepository.findByShortCode(shortCode).isPresent());
 
-        Link link = new Link(longUrl, shortCode);
+        Link link = new Link(formattedUrl, shortCode);
         return linkRepository.save(link);
+    }
+
+    private String formatUrl(String url) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException("URL não pode ser vazia.");
+        }
+        String trimmedUrl = url.trim();
+        if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+            return trimmedUrl;
+        }
+        return "https://" + trimmedUrl;
     }
 }
