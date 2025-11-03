@@ -165,18 +165,46 @@ Redireciona o usuário para a URL original.
 * [x] **Conexão:** Configurar `CORS` para permitir o consumo pelo frontend.
 
 ### Escalamento do projeto
+
+## Testes devem e serão refatorados a cada fase do projeto
+* [ ] **Testes Unitários (JUnit + Mockito):**
+    * **O que:** Testar a camada de `Service` (`LinkService`) em isolamento.
+    * **Garantir que:** A lógica de `formatUrl` (adicionar `https://`) funciona.
+    * **Garantir que:** O `LinkService` chama o `linkRepository.save()` corretamente.
+* [ ] **Testes de Integração (JUnit + Testcontainers):**
+    * **O que:** Testar o fluxo completo (`Controller` -> `Service` -> `Banco`).
+    * **Garantir que:** Uma chamada `POST /api/mvp/shorten` *realmente* salva a entidade no banco de dados do Testcontainer.
+
 * [ ] **Otimização de Chaves (Base62)**
     * Substituir a geração de `shortCode` (UUID) pelo algoritmo **Base62** baseado no ID da entidade, garantindo performance e ausência de colisões.
+
+* [ ] **Testes a Refatorar:**
+    * Modificar o Teste de Integração para validar que o `shortCode` salvo no banco é um Base62 válido e que a lógica de `INSERT` + `UPDATE` funciona.
 
 * [ ] **Cache de Leitura (Redis)**
     * Implementar **Redis** para cachear os redirecionamentos. A maioria das leituras (`GET`) será servida em milissegundos, sem tocar no PostgreSQL.
 
+* [ ] **Testes a Adicionar:**
+    * Adicionar Testes Unitários ao `LinkService` (com Mockito) para validar o "cache hit" (a 2ª chamada não toca no `LinkRepository`) e o "cache miss" (a 1ª chamada toca no `LinkRepository`).
+    * Adicionar um Teste de Integração (com Testcontainers para Redis) que valida se o cache está sendo populado.
+
 * [ ] **Analytics Assíncrono (RabbitMQ)**
     * Adicionar contagem de cliques. Para não adicionar latência ao redirect, a lógica de `UPDATE` no banco será desacoplada usando **RabbitMQ**.
+
+* [ ] **Testes a Adicionar:**
+    * Adicionar Testes de Integração (com Testcontainers para RabbitMQ) que validam:
+        1. Que o `GET /{shortCode}` (redirect) publica uma mensagem na fila.
+        2. Que o `RabbitMQ Listener` consome a mensagem e atualiza o `clickCount` no banco.
 
 * [ ] **Autenticação e Dashboard**
     * Implementar **Spring Security (JWT)** para permitir login e registro de usuários.
     * Criar endpoints de CRUD (`GET /api/links`, `DELETE /api/links/{id}`) para um dashboard onde o usuário possa gerenciar seus próprios links.
+
+* [ ] **Testes a Refatorar:**
+    * Todos os Testes de Integração (`POST /api/...`, `DELETE /api/...`) precisarão ser refatorados para *primeiro* se autenticar (obter um token JWT) e incluir esse token na requisição.
+* [ ] **Testes a Adicionar:**
+    * Testar os novos endpoints de CRUD (para o dashboard).
+    * Testar os casos de falha (acesso a links privados, endpoints sem autenticação, etc.).
 
 * [ ] **Deploy em Container (Docker)**
     * Criar o `Dockerfile` da aplicação Spring Boot para produção (usando multi-stage builds).
