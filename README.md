@@ -79,6 +79,32 @@ Rode seu serviço PostgreSQL. Você tem duas escolhas:
 
 Abra o projeto na sua IDE (a utilizada por mim foi o IntelliJ) e rode a classe principal UrlShortenerApplication.java.
 
+### Opção 3: Rodar a Stack Completa com Docker (Simulação de Produção)
+
+Esta opção roda **tudo** (a API Spring Boot e o Banco de Dados) dentro de containers Docker. Isso é possível graças ao `Dockerfile` e ao `docker-compose.yml` de produção.
+
+**1. Clone o repositório:**
+```bash
+git clone https://github.com/siyFred/url-shortener-api.git
+cd url-shortener-api
+```
+
+**2. Rode o Docker Compose:**
+(É necessário ter o Docker instalado e rodando).
+```bash
+docker compose up --build
+```
+* **`up`**: Inicia todos os serviços definidos no `docker-compose.yml` (o `postgres` e o `app`).
+* **`--build`**: Força o Docker a (re)compilar sua aplicação Spring Boot (`app`) usando o `Dockerfile`, garantindo que qualquer mudança no código seja incluída.
+
+O Docker irá:
+1.  Construir a imagem da sua API.
+2.  Iniciar o container do `postgres`.
+3.  Esperar o `postgres` ficar "saudável" (graças ao `healthcheck`).
+4.  Iniciar o container da sua `app` (API).
+
+Sua API estará disponível em `http://localhost:8080`.
+
 ## Compilando e Rodando (Sem IDE)
 
 Se você preferir compilar e rodar a aplicação via linha de comando:
