@@ -32,7 +32,7 @@ public class LinkService {
         long id = savedLink.getId();
         String shortCode = base62.encode(id);
         savedLink.setShortCode(shortCode);
-        
+
         return linkRepository.save(savedLink);
     }
 

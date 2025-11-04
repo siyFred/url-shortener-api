@@ -201,10 +201,10 @@ Redireciona o usuário para a URL original.
     * **O que:** Testar o fluxo completo (`Controller` -> `Service` -> `Banco`).
     * **Garantir que:** Uma chamada `POST /api/mvp/shorten` *realmente* salva a entidade no banco de dados do Testcontainer.
 
-* [ ] **Otimização de Chaves (Base62)**
+* [x] **Otimização de Chaves (Base62)**
     * Substituir a geração de `shortCode` (UUID) pelo algoritmo **Base62** baseado no ID da entidade, garantindo performance e ausência de colisões.
 
-* [ ] **Testes a Refatorar:**
+* [x] **Testes a Refatorar:**
     * Modificar o Teste de Integração para validar que o `shortCode` salvo no banco é um Base62 válido e que a lógica de `INSERT` + `UPDATE` funciona.
 
 * [ ] **Cache de Leitura (Redis)**

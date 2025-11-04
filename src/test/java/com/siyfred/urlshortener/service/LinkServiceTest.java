@@ -2,9 +2,9 @@ package com.siyfred.urlshortener.service;
 
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
+import com.siyfred.urlshortener.util.Base62;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -18,6 +18,9 @@ import static org.junit.jupiter.api.Assertions.*;
 public class LinkServiceTest {
     @Mock
     private LinkRepository linkRepository;
+
+    @Mock
+    private Base62 base62;
 
     @InjectMocks
     private LinkService linkService;
@@ -35,7 +38,7 @@ public class LinkServiceTest {
 
         // ASSERT
         assertTrue(resultado.isPresent(), "O resultado não deveria estar vazio");
-        assertEquals(longUrl, resultado.get().getLongUrl(), "A URL longa não bate");
+        assertEquals(longUrl, resultado.get().getLongUrl(), "A URL longa recuperada do repositorio mockado esta incorreta");
         verify(linkRepository, times(1)).findByShortCode(shortCode);
     }
 
@@ -44,15 +47,28 @@ public class LinkServiceTest {
         // ARRANGE
         String incomplete_longUrl = "google.com";
         String expected_longUrl = "https://google.com";
-        when(linkRepository.findByShortCode(any(String.class))).thenReturn(Optional.empty());
-        ArgumentCaptor<Link> linkArgumentCaptor = ArgumentCaptor.forClass(Link.class);
+        String expected_shortCode = "gE";
+
+        Link linkWithoutId = new Link(expected_longUrl, null);
+        Link linkWithId = new Link(expected_longUrl, null);
+        linkWithId.setId(1000L);
+
+        Link finalLink = new Link(expected_longUrl, expected_shortCode);
+        finalLink.setId(1000L);
+
+        when(linkRepository.save(any(Link.class)))
+                .thenReturn(linkWithId)
+                .thenReturn(finalLink);
+
+        when(base62.encode(1000L)).thenReturn(expected_shortCode);
 
         // ACT
-        linkService.createShortUrl(incomplete_longUrl);
+        Link finalResult = linkService.createShortUrl(incomplete_longUrl);
 
         // ASSERT
-        verify(linkRepository, times(1)).save(linkArgumentCaptor.capture());
-        Link savedLink = linkArgumentCaptor.getValue();
-        assertEquals(expected_longUrl, savedLink.getLongUrl(), "A URL salva não foi formatada corretamente (https://)");
+        verify(base62, times(1)).encode(1000L);
+        verify(linkRepository, times(2)).save(any(Link.class));
+        assertEquals(expected_longUrl, finalResult.getLongUrl(), "A URL longa não foi formatada corretamente");
+        assertEquals(expected_shortCode, finalResult.getShortCode(), "O shortCode final está incorreto");
     }
 }

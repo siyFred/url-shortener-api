@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siyfred.urlshortener.dto.ShortenRequest;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
+import com.siyfred.urlshortener.util.Base62;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +53,9 @@ public class LinkControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private Base62 base62;
+
     @BeforeEach
     void setUp() {
         linkRepository.deleteAll();
@@ -82,6 +86,10 @@ public class LinkControllerTest {
         List<Link> links = linkRepository.findAll();
         assertThat(links).hasSize(1);
         assertThat(links.get(0).getLongUrl()).isEqualTo("https://google.com");
+
+        Long savedId = links.get(0).getId();
+        String saved_shortCode = links.get(0).getShortCode();
+        assertThat(saved_shortCode).isEqualTo(base62.encode(savedId));
     }
 
     @Test
