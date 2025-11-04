@@ -20,6 +20,9 @@ public class Link {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "click_count", nullable = false)
+    private Long clickCount = 0L;
+
     public Link() {
     }
 
@@ -63,5 +66,13 @@ public class Link {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Long getClickCount() {
+        return clickCount;
+    }
+
+    public void setClickCount(Long clickCount) {
+        this.clickCount = clickCount;
     }
 }

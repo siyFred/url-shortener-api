@@ -16,6 +16,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   app:
     build: .
     container_name: 'url-shortener-api'
@@ -24,10 +25,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       - 'DB_URL=jdbc:postgresql://postgres:5432/urlshortener_db'
       - 'DB_USERNAME=postgres'
       - 'DB_PASSWORD=postgres'
+      - 'SPRING_DATA_REDIS_HOST=redis'
+      - 'SPRING_RABBITMQ_HOST=rabbitmq'
+
   redis:
     image: 'redis:8-alpine'
     container_name: 'redis-cache'
@@ -41,6 +49,24 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: 'rabbitmq:3.13-management-alpine'
+    container_name: 'rabbitmq'
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    environment:
+      - 'RABBITMQ_DEFAULT_USER=guest'
+      - 'RABBITMQ_DEFAULT_PASS=guest'
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
+  rabbitmq_data:
