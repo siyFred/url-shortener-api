@@ -10,7 +10,13 @@ spring:
       ddl-auto: update
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
 server:
   port: 8080
 
+cache:
+  type: redis

@@ -3,6 +3,7 @@ package com.siyfred.urlshortener.service;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
 import com.siyfred.urlshortener.util.Base62;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,7 @@ public class LinkService {
         this.base62 = base62;
     }
 
+    @Cacheable(value = "links", key = "#shortCode")
     public Optional<Link> getLongUrlByShortCode(String shortCode) {
         return linkRepository.findByShortCode(shortCode);
     }

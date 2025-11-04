@@ -204,10 +204,10 @@ Redireciona o usuário para a URL original.
 * [x] **Otimização de Chaves (Base62)**
     * Substituir a geração de `shortCode` (UUID) pelo algoritmo **Base62** baseado no ID da entidade, garantindo performance e ausência de colisões.
 
-* [x] **Testes a Refatorar:**
-    * Modificar o Teste de Integração para validar que o `shortCode` salvo no banco é um Base62 válido e que a lógica de `INSERT` + `UPDATE` funciona.
+  * [x] **Testes a Refatorar:**
+      * Modificar o Teste de Integração para validar que o `shortCode` salvo no banco é um Base62 válido e que a lógica de `INSERT` + `UPDATE` funciona.
 
-* [ ] **Cache de Leitura (Redis)**
+* [x] **Cache de Leitura (Redis)**
     * Implementar **Redis** para cachear os redirecionamentos. A maioria das leituras (`GET`) será servida em milissegundos, sem tocar no PostgreSQL.
 
 * [ ] **Testes a Adicionar:**
