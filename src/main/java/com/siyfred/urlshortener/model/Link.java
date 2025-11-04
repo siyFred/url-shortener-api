@@ -14,7 +14,7 @@ public class Link {
     @Column(name = "long_url", nullable = false, columnDefinition = "TEXT")
     private String longUrl;
 
-    @Column(name = "short_code", nullable = false, unique = true, length = 7)
+    @Column(name = "short_code", unique = true)
     private String shortCode;
 
     @Column(name = "created_at", nullable = false, updatable = false)
