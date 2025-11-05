@@ -13,6 +13,7 @@ import java.util.Optional;
 public class LinkService {
     private final LinkRepository linkRepository;
     private final Base62 base62;
+    private static final long OBFUSCATION_PRIME = 1181783497276652981L;
 
     public LinkService(LinkRepository linkRepository, Base62 base62) {
         this.linkRepository = linkRepository;
@@ -32,7 +33,8 @@ public class LinkService {
         Link savedLink = linkRepository.save(link);
 
         long id = savedLink.getId();
-        String shortCode = base62.encode(id);
+        long obfuscatedId = (id * OBFUSCATION_PRIME);
+        String shortCode = base62.encode(obfuscatedId);
         savedLink.setShortCode(shortCode);
 
         return linkRepository.save(savedLink);

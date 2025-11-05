@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
 public class LinkServiceTest {
+    private static final long OBFUSCATION_PRIME = 1181783497276652981L;
+
     @Mock
     private LinkRepository linkRepository;
 
@@ -43,30 +45,31 @@ public class LinkServiceTest {
     }
 
     @Test
-    void createShortUrl_shouldAddHttps_whenUrlIsRelative() {
+    void createShortUrl_shouldUseObfuscatedId_andFormatUrl() {
         // ARRANGE
         String incomplete_longUrl = "google.com";
         String expected_longUrl = "https://google.com";
         String expected_shortCode = "gE";
+        long expected_id = 1000L;
+        long expected_obfuscated_id = expected_id * OBFUSCATION_PRIME;
 
-        Link linkWithoutId = new Link(expected_longUrl, null);
         Link linkWithId = new Link(expected_longUrl, null);
-        linkWithId.setId(1000L);
+        linkWithId.setId(expected_id);
 
         Link finalLink = new Link(expected_longUrl, expected_shortCode);
-        finalLink.setId(1000L);
+        finalLink.setId(expected_id);
 
         when(linkRepository.save(any(Link.class)))
                 .thenReturn(linkWithId)
                 .thenReturn(finalLink);
 
-        when(base62.encode(1000L)).thenReturn(expected_shortCode);
+        when(base62.encode(expected_obfuscated_id)).thenReturn(expected_shortCode);
 
         // ACT
         Link finalResult = linkService.createShortUrl(incomplete_longUrl);
 
         // ASSERT
-        verify(base62, times(1)).encode(1000L);
+        verify(base62, times(1)).encode(expected_obfuscated_id);
         verify(linkRepository, times(2)).save(any(Link.class));
         assertEquals(expected_longUrl, finalResult.getLongUrl(), "A URL longa não foi formatada corretamente");
         assertEquals(expected_shortCode, finalResult.getShortCode(), "O shortCode final está incorreto");
