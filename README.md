@@ -210,7 +210,7 @@ Redireciona o usuário para a URL original.
 * [x] **Cache de Leitura (Redis)**
     * Implementar **Redis** para cachear os redirecionamentos. A maioria das leituras (`GET`) será servida em milissegundos, sem tocar no PostgreSQL.
 
-* [ ] **Testes a Adicionar:**
+* [x] **Testes a Adicionar:**
     * Adicionar Testes Unitários ao `LinkService` (com Mockito) para validar o "cache hit" (a 2ª chamada não toca no `LinkRepository`) e o "cache miss" (a 1ª chamada toca no `LinkRepository`).
     * Adicionar um Teste de Integração (com Testcontainers para Redis) que valida se o cache está sendo populado.
 

@@ -19,7 +19,7 @@ public class LinkService {
         this.base62 = base62;
     }
 
-    @Cacheable(value = "links", key = "#shortCode")
+    @Cacheable(value = "links", key = "#shortCode", unless = "#result == null")
     public Optional<Link> getLongUrlByShortCode(String shortCode) {
         return linkRepository.findByShortCode(shortCode);
     }

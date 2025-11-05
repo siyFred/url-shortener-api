@@ -10,17 +10,24 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.util.List;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -34,6 +41,10 @@ public class LinkControllerTest {
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine");
 
+    @Container
+    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:8-alpine"))
+            .withExposedPorts(6379);
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -42,12 +53,14 @@ public class LinkControllerTest {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         // esse create-drop parece redundante, mas na vdd cobre um cenário que @BeforeEach deleteAll nao cobre:
         // ele garante que o schema é sempre o correto, mesmo que eu mude um model
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", redis::getFirstMappedPort);
     }
 
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
+    @MockitoSpyBean
     private LinkRepository linkRepository;
 
     @Autowired
@@ -56,9 +69,15 @@ public class LinkControllerTest {
     @Autowired
     private Base62 base62;
 
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
     @BeforeEach
     void setUp() {
         linkRepository.deleteAll();
+
+        var connectionFactory = Objects.requireNonNull(redisTemplate.getConnectionFactory());
+        connectionFactory.getConnection().serverCommands().flushAll();
     }
 
     @Test
@@ -114,5 +133,28 @@ public class LinkControllerTest {
 
                 // ASSERT
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void redirectToLongUrl_shouldUseCache_onSecondCall() throws Exception {
+        // ARRANGE
+        Link link = new Link("https://google.com", "cached-key");
+        linkRepository.save(link);
+
+        // ACT 1
+        mockMvc.perform(get("/" + link.getShortCode()))
+                .andExpect(status().isMovedPermanently())
+                .andExpect(header().string("Location", "https://google.com"));
+
+        // ASSERT 1
+        verify(linkRepository, times(1)).findByShortCode("cached-key");
+
+        // ACT 2
+        mockMvc.perform(get("/" + link.getShortCode()))
+                .andExpect(status().isMovedPermanently())
+                .andExpect(header().string("Location", "https://google.com"));
+
+        // ASSERT
+        verify(linkRepository, times(1)).findByShortCode("cached-key");
     }
 }
