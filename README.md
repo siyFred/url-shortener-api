@@ -232,6 +232,10 @@ Redireciona o usuário para a URL original.
     * Testar os novos endpoints de CRUD (para o dashboard).
     * Testar os casos de falha (acesso a links privados, endpoints sem autenticação, etc.).
 
+* [ ] **Refatorar código e arquitetura:**
+    * Foco em preparar o código para produção e melhorar a manutenabilidade.
+    * Implementar validação de entrada, tratamento de erros, rate limiting, logging (logs estruturados talvez?), etc.
+
 * [ ] **Deploy em Container (Docker)**
     * Criar o `Dockerfile` da aplicação Spring Boot para produção (usando multi-stage builds).
     * Criar um `docker-compose.yml` de produção para orquestrar `API`, `PostgreSQL`, `Redis` e `RabbitMQ`.
