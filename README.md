@@ -217,7 +217,7 @@ Redireciona o usuário para a URL original.
 * [x] **Analytics Assíncrono (RabbitMQ)**
     * Adicionar contagem de cliques. Para não adicionar latência ao redirect, a lógica de `UPDATE` no banco será desacoplada usando **RabbitMQ**.
 
-* [ ] **Testes a Adicionar:**
+* [x] **Testes a Adicionar:**
     * Adicionar Testes de Integração (com Testcontainers para RabbitMQ) que validam:
         1. Que o `GET /{shortCode}` (redirect) publica uma mensagem na fila.
         2. Que o `RabbitMQ Listener` consome a mensagem e atualiza o `clickCount` no banco.
