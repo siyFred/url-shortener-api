@@ -3,6 +3,7 @@ package com.siyfred.urlshortener.service;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
 import com.siyfred.urlshortener.util.Base62;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,23 @@ public class LinkService {
         savedLink.setShortCode(shortCode);
 
         return linkRepository.save(savedLink);
+    }
+
+    @Transactional
+    @CacheEvict(value = "links", key = "#shortCode")
+    public Optional<Link> updateLongUrlByShortCode(String shortCode, String newLongUrl) {
+        Optional<Link> existing = linkRepository.findByShortCode(shortCode);
+        if (existing.isEmpty()) return Optional.empty();
+
+        Link link = existing.get();
+        link.setLongUrl(formatUrl(newLongUrl));
+        Link saved = linkRepository.save(link);
+        return Optional.of(saved);
+    }
+
+    @CacheEvict(value = "links", key = "#shortCode")
+    public void evictCacheForShortCode(String shortCode) {
+        // anotação @CacheEvict faz tudo
     }
 
     private String formatUrl(String url) {

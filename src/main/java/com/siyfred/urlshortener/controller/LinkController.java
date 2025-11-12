@@ -41,6 +41,25 @@ public class LinkController {
         return ResponseEntity.ok(response);
     }
 
+    @PutMapping("api/mvp/shorten/{shortCode}")
+    public ResponseEntity<ShortenResponse> updateLongUrl(@PathVariable String shortCode, @RequestBody ShortenRequest request, HttpServletRequest httpRequest) {
+        Optional<Link> updated = linkService.updateLongUrlByShortCode(shortCode, request.longUrl());
+        if (updated.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String baseUrl = httpRequest.getRequestURL().toString().replace(httpRequest.getRequestURI(), "");
+        String shortUrl = baseUrl + "/" + shortCode;
+
+        return ResponseEntity.ok(new ShortenResponse(shortUrl));
+    }
+
+    @DeleteMapping("api/mvp/shorten/{shortCode}/cache")
+    public ResponseEntity<Void> evictCache(@PathVariable String shortCode) {
+        linkService.evictCacheForShortCode(shortCode);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{shortCode}")
     public ResponseEntity<Void> redirectToLongUrl(@PathVariable String shortCode, HttpServletRequest httpRequest) {
         Optional<Link> link = linkService.getLongUrlByShortCode(shortCode);
@@ -71,7 +90,7 @@ public class LinkController {
         }
 
         return ResponseEntity
-                .status(HttpStatus.FOUND) // acho q 302 é o que menos causa caching excessivo nos navegadores
+                .status(HttpStatus.FOUND) // acho q 302 é o que menos causa caching excessivo nos navegadores. EDIT: mudança de longUrl deu certo com 302 xD
                 .location(URI.create(link.get().getLongUrl()))
                 .build();
     }
