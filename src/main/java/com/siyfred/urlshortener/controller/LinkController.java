@@ -6,6 +6,9 @@ import com.siyfred.urlshortener.dto.ShortenResponse;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.service.LinkService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +20,8 @@ import java.util.Optional;
 
 @RestController
 public class LinkController {
+    private static final Logger log = LoggerFactory.getLogger(LinkController.class);
+
     private final LinkService linkService;
     private final RabbitTemplate rabbitTemplate;
 
@@ -44,17 +49,29 @@ public class LinkController {
             return ResponseEntity.notFound().build();
         }
 
-        if("GET".equals(httpRequest.getMethod())) { // sem o IF o RabbitMQ ficaria dando clique duplicado em reqs não GET (HEAD do cache do navegador, por exemplo)
+        if("GET".equals(httpRequest.getMethod())) {
+            String ip = httpRequest.getRemoteAddr();
+            if (ip == null || ip.isBlank()) {
+                ip = "0.0.0.0";
+            }
+            String ua = httpRequest.getHeader("User-Agent");
+            if (ua == null) {
+                ua = "unknown";
+            }
             Map<String, String> clickMessage = Map.of(
                     "shortCode", shortCode,
-                    "ipAddress", httpRequest.getRemoteAddr(),
-                    "userAgent", httpRequest.getHeader("User-Agent")
+                    "ipAddress", ip,
+                    "userAgent", ua
             );
-            rabbitTemplate.convertAndSend(RabbitMQConfig.CLICKS_QUEUE_NAME, clickMessage); // fila do RabbitMQ.
+            try {
+                rabbitTemplate.convertAndSend(RabbitMQConfig.CLICKS_QUEUE_NAME, clickMessage);
+            } catch (AmqpException e) {
+                log.warn("Falha ao enviar mensagem de clique para RabbitMQ; prosseguindo com redirect. Causa: {}", e.getMessage());
+            }
         }
 
         return ResponseEntity
-                .status(HttpStatus.FOUND)
+                .status(HttpStatus.FOUND) // acho q 302 é o que menos causa caching excessivo nos navegadores
                 .location(URI.create(link.get().getLongUrl()))
                 .build();
     }

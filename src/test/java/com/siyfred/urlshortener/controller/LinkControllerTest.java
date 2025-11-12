@@ -10,12 +10,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.MediaType;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -23,7 +22,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.util.List;
-import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.times;
@@ -51,10 +49,10 @@ public class LinkControllerTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-        // esse create-drop parece redundante, mas na vdd cobre um cenário que @BeforeEach deleteAll nao cobre:
-        // ele garante que o schema é sempre o correto, mesmo que eu mude um model
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
+        // não inicia listeners Rabbit durante o teste de controller
+        registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
     }
 
     @Autowired
@@ -69,15 +67,9 @@ public class LinkControllerTest {
     @Autowired
     private Base62 base62;
 
-    @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
-
     @BeforeEach
     void setUp() {
         linkRepository.deleteAll();
-
-        var connectionFactory = Objects.requireNonNull(redisTemplate.getConnectionFactory());
-        connectionFactory.getConnection().serverCommands().flushAll();
     }
 
     @Test
@@ -108,7 +100,7 @@ public class LinkControllerTest {
 
         Long savedId = links.get(0).getId();
         String saved_shortCode = links.get(0).getShortCode();
-        assertThat(saved_shortCode).isEqualTo(base62.encode(savedId));
+        assertThat(saved_shortCode).isEqualTo(base62.encode(savedId * 1181783497276652981L));
     }
 
     @Test
@@ -121,7 +113,7 @@ public class LinkControllerTest {
         mockMvc.perform(get("/" + link.getShortCode()))
 
                 // ASSERT
-                .andExpect(status().isMovedPermanently())
+                .andExpect(status().isFound())
                 .andExpect(header().string("Location", "https://github.com"));
     }
 
@@ -143,7 +135,7 @@ public class LinkControllerTest {
 
         // ACT 1
         mockMvc.perform(get("/" + link.getShortCode()))
-                .andExpect(status().isMovedPermanently())
+                .andExpect(status().isFound())
                 .andExpect(header().string("Location", "https://google.com"));
 
         // ASSERT 1
@@ -151,7 +143,7 @@ public class LinkControllerTest {
 
         // ACT 2
         mockMvc.perform(get("/" + link.getShortCode()))
-                .andExpect(status().isMovedPermanently())
+                .andExpect(status().isFound())
                 .andExpect(header().string("Location", "https://google.com"));
 
         // ASSERT
