@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
@@ -42,8 +43,15 @@ public class LinkController {
         if(link.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        
-        rabbitTemplate.convertAndSend(RabbitMQConfig.CLICKS_QUEUE_NAME, shortCode); // fila do RabbitMQ
+
+        if("GET".equals(httpRequest.getMethod())) { // sem o IF o RabbitMQ ficaria dando clique duplicado em reqs não GET (HEAD do cache do navegador, por exemplo)
+            Map<String, String> clickMessage = Map.of(
+                    "shortCode", shortCode,
+                    "ipAddress", httpRequest.getRemoteAddr(),
+                    "userAgent", httpRequest.getHeader("User-Agent")
+            );
+            rabbitTemplate.convertAndSend(RabbitMQConfig.CLICKS_QUEUE_NAME, clickMessage); // fila do RabbitMQ.
+        }
 
         return ResponseEntity
                 .status(HttpStatus.FOUND)
