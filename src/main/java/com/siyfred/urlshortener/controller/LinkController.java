@@ -30,7 +30,7 @@ public class LinkController {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    @PostMapping("api/mvp/shorten")
+    @PostMapping("api/shorten")
     public ResponseEntity<ShortenResponse> shortenUrl(@RequestBody ShortenRequest request, HttpServletRequest httpRequest) {
         Link savedLink = linkService.createShortUrl(request.longUrl());
 
@@ -41,7 +41,7 @@ public class LinkController {
         return ResponseEntity.ok(response);
     }
 
-    @PutMapping("api/mvp/shorten/{shortCode}")
+    @PutMapping("api/shorten/{shortCode}")
     public ResponseEntity<ShortenResponse> updateLongUrl(@PathVariable String shortCode, @RequestBody ShortenRequest request, HttpServletRequest httpRequest) {
         Optional<Link> updated = linkService.updateLongUrlByShortCode(shortCode, request.longUrl());
         if (updated.isEmpty()) {
@@ -54,7 +54,7 @@ public class LinkController {
         return ResponseEntity.ok(new ShortenResponse(shortUrl));
     }
 
-    @DeleteMapping("api/mvp/shorten/{shortCode}/cache")
+    @DeleteMapping("api/shorten/{shortCode}/cache")
     public ResponseEntity<Void> evictCache(@PathVariable String shortCode) {
         linkService.evictCacheForShortCode(shortCode);
         return ResponseEntity.noContent().build();

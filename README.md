@@ -157,7 +157,7 @@ java -jar target/url-shortener-api-0.0.1-SNAPSHOT.jar
 Cria uma nova URL encurtada.
 
 * **Método:** `POST`
-* **Endpoint:** `/api/mvp/shorten`
+* **Endpoint:** `/api/shorten`
 * **Body (JSON):**
     ```json
     {

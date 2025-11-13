@@ -85,7 +85,7 @@ public class LinkControllerTest {
         String requestJson = objectMapper.writeValueAsString(request);
 
         // ACT
-        mockMvc.perform(post("/api/mvp/shorten")
+        mockMvc.perform(post("/api/shorten")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson))
 
