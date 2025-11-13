@@ -222,7 +222,7 @@ Redireciona o usuário para a URL original.
         1. Que o `GET /{shortCode}` (redirect) publica uma mensagem na fila.
         2. Que o `RabbitMQ Listener` consome a mensagem e atualiza o `clickCount` no banco.
 
-* [ ] **Autenticação e Dashboard**
+* [ ] **Autenticação Segura e Dashboard**
     * Implementar **Spring Security (JWT)** para permitir login e registro de usuários.
     * Criar endpoints de CRUD (`GET /api/links`, `DELETE /api/links/{id}`) para um dashboard onde o usuário possa gerenciar seus próprios links.
 
