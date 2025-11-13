@@ -3,6 +3,7 @@ package com.siyfred.urlshortener.service;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
 import com.siyfred.urlshortener.util.Base62;
+import com.siyfred.urlshortener.util.UrlFormatter;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -14,11 +15,13 @@ import java.util.Optional;
 public class LinkService {
     private final LinkRepository linkRepository;
     private final Base62 base62;
+    private final UrlFormatter urlFormatter;
     private static final long OBFUSCATION_PRIME = 1181783497276652981L;
 
-    public LinkService(LinkRepository linkRepository, Base62 base62) {
+    public LinkService(LinkRepository linkRepository, Base62 base62, UrlFormatter urlFormatter) {
         this.linkRepository = linkRepository;
         this.base62 = base62;
+        this.urlFormatter = urlFormatter;
     }
 
     @Cacheable(value = "links", key = "#shortCode", unless = "#result == null")
@@ -28,7 +31,7 @@ public class LinkService {
 
     @Transactional
     public Link createShortUrl(String longUrl) {
-        String formattedUrl = formatUrl(longUrl);
+        String formattedUrl = urlFormatter.formatUrl(longUrl);
 
         Link link = new Link(formattedUrl, null);
         Link savedLink = linkRepository.save(link);
@@ -48,7 +51,7 @@ public class LinkService {
         if (existing.isEmpty()) return Optional.empty();
 
         Link link = existing.get();
-        link.setLongUrl(formatUrl(newLongUrl));
+        link.setLongUrl(urlFormatter.formatUrl(newLongUrl));
         Link saved = linkRepository.save(link);
         return Optional.of(saved);
     }
@@ -56,16 +59,5 @@ public class LinkService {
     @CacheEvict(value = "links", key = "#shortCode")
     public void evictCacheForShortCode(String shortCode) {
         // anotação @CacheEvict faz tudo
-    }
-
-    private String formatUrl(String url) {
-        if (url == null || url.isBlank()) {
-            throw new IllegalArgumentException("URL não pode ser vazia.");
-        }
-        String trimmedUrl = url.trim();
-        if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
-            return trimmedUrl;
-        }
-        return "https://" + trimmedUrl;
     }
 }
