@@ -1,105 +1,65 @@
 ---
-title: "URL Shortener API Escalável com Cache e Analytics Assíncrono"
-description: "API de encurtamento de URLs com baixa latência em leitura e rastreamento de cliques desacoplado para escalar com segurança."
-stack: ["Java 21", "Spring Boot 3", "PostgreSQL", "Redis", "RabbitMQ", "Docker", "Testcontainers"]
+title: "URL Shortener"
+description: "Plataforma Full-Stack de encurtamento de URLs. Combina um frontend moderno em Next.js a uma API Java escalável com foco em baixa latência e observabilidade."
+stack: ["Java 21", "Spring Boot 3", "Next.js", "TypeScript", "PostgreSQL", "Redis", "RabbitMQ", "Testcontainers"]
 images: ["assets/capa.png"]
 featured-skills: ["Arquitetura Distribuída", "Mensageria Assíncrona", "Performance com Cache"]
 ---
 
-## Visão do Projeto
+## Visão do Produto
 
-Este serviço implementa o núcleo de um encurtador de URLs no estilo bit.ly, com foco em **latência baixa no redirecionamento**, **escalabilidade horizontal** e **evolução segura via testes automatizados**.
+Este projeto engloba o ecossistema completo de um encurtador de URLs no estilo bit.ly. A arquitetura foi desenhada para resolver um problema clássico de escalabilidade: atender um fluxo **massivo de leituras (redirects)** sem penalizar a experiência do usuário web ou a gravação de métricas de acesso.
 
-Além de gerar links curtos, o sistema foi estruturado para suportar crescimento real de tráfego com:
+O sistema é dividido em duas camadas totalmente desacopladas:
+1. **Frontend (Next.js/React):** Um MVP focado em reduzir a fricção na criação de links e tratar fluxos de estado assíncrono com feedback em tempo real.
+2. **Backend (Java/Spring Boot):** Uma API estruturada com mensageria e cache, preparada para suporte de tráfego real, resiliência e alta disponibilidade.
 
-- persistência transacional em PostgreSQL;
-- cache de leitura em Redis;
-- processamento assíncrono de analytics com RabbitMQ.
+---
 
-## Objetivo de Engenharia
+## ⚙️ Arquitetura Backend e Decisões de Engenharia
 
-O objetivo não é apenas “encurtar links”, e sim resolver três problemas típicos de produto em produção:
+O foco do backend não é apenas redirecionar links, mas resolver gargalos previsíveis de produção:
 
-1. **Alta taxa de leitura** no endpoint de redirect (`GET /{shortCode}`).
-2. **Observabilidade de uso** (contagem de cliques) sem penalizar tempo de resposta.
-3. **Confiabilidade evolutiva** com testes unitários e de integração com infraestrutura real (Testcontainers).
-
-## Arquitetura e Decisões Técnicas
-
-### 1) Geração de shortCode sem colisão operacional
-
-O `shortCode` é derivado do ID do banco e codificado em Base62 após ofuscação numérica.
-
+### 1) Geração de shortCode sem colisão
+O código curto é derivado de um ID da tabela processado via ofuscação numérica e codificado em Base62.
 ```java
 long obfuscatedId = (id * OBFUSCATION_PRIME);
 String shortCode = base62.encode(obfuscatedId);
 ```
+**Por quê:** Evita o processamento repetitivo de checagem de colisão no banco (comum em geradores randômicos) e garante resolução previsível.
 
-**Por quê:**
-- evita colisões probabilísticas de estratégias randômicas;
-- reduz custo de verificação de unicidade;
-- produz códigos curtos e amigáveis para URL.
-
-### 2) Camada de persistência focada em consistência
-
-A entidade `Link` mantém `longUrl`, `shortCode`, `createdAt` e `clickCount`.
-
-**Por quê essa modelagem:**
-- `short_code` único garante resolução determinística de redirect;
-- `click_count` agregado no próprio registro simplifica consultas de produto;
-- `created_at` nativo facilita análise temporal sem joins extras.
-
-### 3) Cache de leitura com Redis para reduzir carga no banco
-
-O lookup por `shortCode` usa `@Cacheable`, e atualizações/evicções invalidam a chave com `@CacheEvict`.
-
+### 2) Camada de Cache com Redis
+O lookup por `shortCode` no redirecionamento (`GET /{shortCode}`) é o endpoint mais quente da aplicação. Para reduzir a carga no PostgreSQL, os requests são interceptados por Redis.
 ```java
 @Cacheable(value = "links", key = "#shortCode", unless = "#result == null")
 public Optional<Link> getLongUrlByShortCode(String shortCode)
 ```
 
-**Por quê:**
-- endpoint de redirect é leitura quente;
-- cache reduz round-trips ao PostgreSQL em acessos repetidos;
-- melhora throughput sem alterar contrato da API.
-
-### 4) Analytics assíncrono com RabbitMQ
-
-No redirect, o sistema publica evento de clique em fila e retorna imediatamente ao usuário.
-
+### 3) Analytics Assíncrono com RabbitMQ
+Ao invés de travar a thread HTTP de redirecionamento do usuário para contabilizar "um clique" no banco, o sistema publica um evento em uma fila RabbitMQ e responde instantaneamente ao cliente.
 ```java
 rabbitTemplate.convertAndSend(RabbitMQConfig.CLICKS_QUEUE_NAME, clickMessage);
 ```
+Um worker (`@RabbitListener`) consome as mensagens e consolida a contagem em background, isolando totalmente a UX da sobrecarga analítica.
 
-Um listener dedicado consome a mensagem e atualiza `clickCount`.
+### 4) Deduplicação de Cliques em Janela Curta
+Para evitar que bots ou double-clicks inflem o analytics artificialmente, o listener usa o Redis (`SETNX` com TTL) para barrar eventos idênticos (`shortCode + ip + userAgent`) dentro de uma janela de milissegundos.
 
-**Por quê:**
-- desacopla UX de redirect da escrita analítica;
-- evita aumento de latência por operações secundárias;
-- mantém arquitetura preparada para novos consumidores de eventos.
+---
 
-### 5) Deduplicação de clique em janela curta
+## 🎨 Arquitetura Frontend e Integração
 
-O listener usa Redis (`SETNX` com TTL) para evitar múltiplos incrementos quase simultâneos para a mesma combinação (`shortCode + ip + userAgent`).
+O cliente Web foi consumido via **Next.js (App Router)** e **TypeScript**, servindo como prova de conceito de um consumo limpo de APIs REST:
 
-**Por quê:**
-- reduz ruído de bots/reloads em bursts;
-- melhora qualidade dos analytics sem custo alto de processamento.
+*   **Separação por Estado Explícito:** O fluxo de encurtamento gerencia as etapas (`loading`, `error`, `success`) de forma estrita, garantindo feedback imediato na UI.
+*   **Injeção de Ambiente:** A URL do core Java é injetada via variável de ambiente, facilitando deploy contínuo (CI/CD) e orquestração de infraestrutura separada sem quebrar a interoperabilidade.
 
-## Qualidade e Maturidade de Entrega
+---
 
-O projeto já incorpora estratégia de testes em camadas:
+## Maturidade de Entrega e Qualidade
 
-- **Unitários:** lógica de serviço e geração de shortCode/Base62.
-- **Integração:** fluxo HTTP, persistência e mensageria usando containers reais.
+Para garantir confiabilidade na constante evolução da API, a camada backend conta com forte bateria de testes baseada em **Testcontainers**.
 
-Com Testcontainers, os testes validam comportamento com PostgreSQL/Redis/RabbitMQ próximos da execução real, diminuindo risco de regressão entre ambiente local e CI.
+Em vez de mocks rasos que mascarem a realidade, os testes de integração sobem instâncias descartáveis originais em Docker do PostgreSQL, Redis e RabbitMQ. Isso aproxima o pipeline de CI do ambiente de produção real, garantindo que fluxos de Cache e Mensageria comportem-se com exatidão.
 
-## Resultado
-
-Este backend demonstra domínio prático de design para APIs de alto volume:
-
-- **Rota crítica otimizada** (cache no redirect);
-- **Processamento assíncrono resiliente** (fila para analytics);
-- **Modelo simples e consistente** para evolução de produto;
-- **Base sólida para crescimento** com segurança, observabilidade e novos recursos.
+**O Resultado:** Uma plataforma tolerante a falhas, facilmente expansível (pronta para autenticação e dashboards), e que atesta o domínio do desenho completo do software – da interface do usuário até o banco de relacional.
