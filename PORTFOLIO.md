@@ -6,7 +6,7 @@ images: ["assets/capa.png"]
 featured-skills: ["Arquitetura Distribuída", "Mensageria Assíncrona", "Performance com Cache"]
 ---
 
-## Visão do Produto
+## Visão Geral
 
 Este projeto engloba o ecossistema completo de um encurtador de URLs no estilo bit.ly. A arquitetura foi desenhada para resolver um problema clássico de escalabilidade: atender um fluxo **massivo de leituras (redirects)** sem penalizar a experiência do usuário web ou a gravação de métricas de acesso.
 
@@ -16,7 +16,7 @@ O sistema é dividido em duas camadas totalmente desacopladas:
 
 ---
 
-## ⚙️ Arquitetura Backend e Decisões de Engenharia
+## Arquitetura Backend e Decisões de Engenharia
 
 O foco do backend não é apenas redirecionar links, mas resolver gargalos previsíveis de produção:
 
@@ -47,7 +47,7 @@ Para evitar que bots ou double-clicks inflem o analytics artificialmente, o list
 
 ---
 
-## 🎨 Arquitetura Frontend e Integração
+## Arquitetura Frontend e Integração
 
 O cliente Web foi consumido via **Next.js (App Router)** e **TypeScript**, servindo como prova de conceito de um consumo limpo de APIs REST:
 
