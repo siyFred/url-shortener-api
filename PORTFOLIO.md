@@ -62,4 +62,4 @@ Para garantir confiabilidade na constante evolução da API, a camada backend co
 
 Em vez de mocks rasos que mascarem a realidade, os testes de integração sobem instâncias descartáveis originais em Docker do PostgreSQL, Redis e RabbitMQ. Isso aproxima o pipeline de CI do ambiente de produção real, garantindo que fluxos de Cache e Mensageria comportem-se com exatidão.
 
-**O Resultado:** Uma plataforma tolerante a falhas, facilmente expansível (pronta para autenticação e dashboards), e que atesta o domínio do desenho completo do software – da interface do usuário até o banco de relacional.
+**O Resultado:** Uma plataforma tolerante a falhas, facilmente expansível (pronta para autenticação e dashboards), e que atesta o domínio do desenho completo do software – da interface do usuário até o banco de dados relacional.
