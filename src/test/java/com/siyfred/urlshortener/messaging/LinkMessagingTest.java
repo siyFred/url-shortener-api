@@ -1,5 +1,6 @@
 package com.siyfred.urlshortener.messaging;
 
+import java.time.Duration;
 import com.siyfred.urlshortener.BaseIT;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
@@ -18,6 +19,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.containers.wait.strategy.Wait;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,14 +31,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 public class LinkMessagingTest extends BaseIT {
     @Container
-    static GenericContainer<?> rabbitmq = new GenericContainer<>(DockerImageName.parse("rabbitmq:3.13-management-alpine")).withExposedPorts(5672);
+    static GenericContainer<?> rabbitmq =
+            new GenericContainer<>(
+                    DockerImageName.parse("rabbitmq:3.13-management-alpine"))
+                    .withEnv("RABBITMQ_DEFAULT_USER", "test")
+                    .withEnv("RABBITMQ_DEFAULT_PASS", "test")
+                    .withExposedPorts(5672)
+                    .waitingFor(
+                            Wait.forLogMessage(
+                                    ".*Server startup complete.*",
+                                    1
+                            )
+                    )
+                    .withStartupTimeout(Duration.ofSeconds(90));
 
     @DynamicPropertySource
     static void dynamicProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.rabbitmq.host", rabbitmq::getHost);
         registry.add("spring.rabbitmq.port", rabbitmq::getFirstMappedPort);
-        registry.add("spring.rabbitmq.username", () -> "guest");
-        registry.add("spring.rabbitmq.password", () -> "guest");
+        registry.add("spring.rabbitmq.username", () -> "test");
+        registry.add("spring.rabbitmq.password", () -> "test");
     }
 
     @Autowired
