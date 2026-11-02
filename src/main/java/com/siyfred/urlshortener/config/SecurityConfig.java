@@ -46,8 +46,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/{shortCode}").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                .requestMatchers("/api/shorten").authenticated()
-                .requestMatchers("/api/dashboard/**").authenticated()
+                .requestMatchers("/api/shorten").permitAll() // TODO: implement auth and set this endpoint to .authenticated() instead of permitAll()
+                .requestMatchers("/api/dashboard/**").permitAll() // TODO: implement auth and set this endpoint to .authenticated() instead of permitAll()
                 .anyRequest().denyAll()
         );
         return http.build();
