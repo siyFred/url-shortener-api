@@ -3,6 +3,7 @@ package com.siyfred.urlshortener.service;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
 import com.siyfred.urlshortener.util.Base62;
+import com.siyfred.urlshortener.util.UrlFormatter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -23,6 +24,9 @@ public class LinkServiceTest {
 
     @Mock
     private Base62 base62;
+
+    @Mock
+    private UrlFormatter urlFormatter;
 
     @InjectMocks
     private LinkService linkService;
@@ -53,6 +57,8 @@ public class LinkServiceTest {
         long expected_id = 1000L;
         long expected_obfuscated_id = expected_id * OBFUSCATION_PRIME;
 
+        when(urlFormatter.formatUrl(incomplete_longUrl)).thenReturn(expected_longUrl);
+
         Link linkWithId = new Link(expected_longUrl, null);
         linkWithId.setId(expected_id);
 
@@ -69,6 +75,7 @@ public class LinkServiceTest {
         Link finalResult = linkService.createShortUrl(incomplete_longUrl);
 
         // ASSERT
+        verify(urlFormatter, times(1)).formatUrl(incomplete_longUrl);
         verify(base62, times(1)).encode(expected_obfuscated_id);
         verify(linkRepository, times(2)).save(any(Link.class));
         assertEquals(expected_longUrl, finalResult.getLongUrl(), "A URL longa não foi formatada corretamente");
