@@ -15,6 +15,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -79,6 +80,7 @@ public class LinkControllerTest {
     }
 
     @Test
+    @WithMockUser
     void createShortUrl_shouldCreateLink_whenUrlIsValid() throws Exception {
         // ARRANGE
         ShortenRequest request = new ShortenRequest("https://google.com");
