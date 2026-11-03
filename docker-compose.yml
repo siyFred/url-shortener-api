@@ -35,6 +35,7 @@ services:
       - 'RABBITMQ_USERNAME=guest'
       - 'RABBITMQ_PASSWORD=guest'
       - 'JWT_SECRET=${JWT_SECRET:-jwtsecretsupersecret}'
+      - 'APP_BASE_URL=https://api.url-shortener.siyfred.dev'
 
   caddy:
     image: caddy:2-alpine

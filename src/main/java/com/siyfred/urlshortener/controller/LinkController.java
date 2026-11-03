@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -30,11 +31,13 @@ public class LinkController {
         this.rabbitTemplate = rabbitTemplate;
     }
 
+    @Value("${app.base-url}")
+    private String baseUrl;
+
     @PostMapping("api/shorten")
-    public ResponseEntity<ShortenResponse> shortenUrl(@RequestBody ShortenRequest request, HttpServletRequest httpRequest) {
+    public ResponseEntity<ShortenResponse> shortenUrl(@RequestBody ShortenRequest request) {
         Link savedLink = linkService.createShortUrl(request.longUrl());
 
-        String baseUrl = httpRequest.getRequestURL().toString().replace(httpRequest.getRequestURI(), "");
         String shortUrl = baseUrl + "/" + savedLink.getShortCode();
 
         ShortenResponse response = new ShortenResponse(shortUrl);
