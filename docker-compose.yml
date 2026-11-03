@@ -17,8 +17,10 @@ services:
   app:
     build: .
     container_name: 'url-shortener-api'
-    expose:
-      - '8080'
+    ports:
+      - '8080:8080'
+#    expose:
+#      - '8080'
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,23 +34,23 @@ services:
       - 'DB_PASSWORD=postgres'
       - 'REDIS_HOST=redis'
       - 'RABBITMQ_HOST=rabbitmq'
-      - 'RABBITMQ_USERNAME=guest'
-      - 'RABBITMQ_PASSWORD=guest'
+      - 'RABBITMQ_USER=appuser'
+      - 'RABBITMQ_PASS=appuser'
       - 'JWT_SECRET=${JWT_SECRET:-jwtsecretsupersecret}'
-      - 'APP_BASE_URL=https://api.url-shortener.siyfred.dev'
+#      - 'APP_BASE_URL=https://api.url-shortener.siyfred.dev'
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - app
+#  caddy:
+#    image: caddy:2-alpine
+#    restart: unless-stopped
+#    ports:
+#      - '80:80'
+#      - '443:443'
+#    volumes:
+#      - ./Caddyfile:/etc/caddy/Caddyfile
+#      - caddy_data:/data
+#      - caddy_config:/config
+#    depends_on:
+#      - app
 
   redis:
     image: 'redis:8-alpine'
@@ -65,8 +67,8 @@ services:
     image: 'rabbitmq:3.13-management-alpine'
     container_name: 'rabbitmq'
     environment:
-      - 'RABBITMQ_USER=guest'
-      - 'RABBITMQ_PASS=guest'
+      - 'RABBITMQ_DEFAULT_USER=appuser'
+      - 'RABBITMQ_DEFAULT_PASS=appuser'
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -76,8 +78,8 @@ services:
       retries: 5
 
 volumes:
-  caddy_data:
-  caddy_config:
+#  caddy_data:
+#  caddy_config:
   postgres_data:
   redis_data:
   rabbitmq_data:
