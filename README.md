@@ -1,241 +1,278 @@
 # url-shortener-api
 
-Este projeto fornece APIs REST para um Encurtador de URL similar ao bit.ly.
+![CI/CD](https://img.shields.io/github/actions/workflow/status/siyFred/url-shortener-api/ci.yml?branch=main&label=CI%2FCD&logo=githubactions&logoColor=white)
+![Java 21](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white)
+![Spring Boot 3](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?logo=springboot&logoColor=white)
+![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Redis 8](https://img.shields.io/badge/Redis-8-DC382D?logo=redis&logoColor=white)
+![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-FF6600?logo=rabbitmq&logoColor=white)
+![Maven](https://img.shields.io/badge/Build-Maven-C71A36?logo=apachemaven&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![JUnit 5](https://img.shields.io/badge/Tests-JUnit_5-25A162?logo=junit5&logoColor=white)
+![Testcontainers](https://img.shields.io/badge/Tested_with-Testcontainers-2496ED?logo=docker&logoColor=white)
 
-O Frontend principal deste projeto pode ser encontrado aqui:
-* **Repositório do Frontend:** [github.com/siyFred/url-shortener-web](https://github.com/siyFred/url-shortener-web)
+API RESTful de encurtamento de URLs projetada para **baixa latência no redirecionamento**, **escrita desacoplada de métricas** e **resiliência sob tráfego concorrente**. O projeto é um estudo prático de arquitetura backend distribuída: cache-aside, mensageria assíncrona, locks distribuídos, testes de integração com infraestrutura real e entrega contínua.
 
-O objetivo desta primeira versão (MVP) é fornecer a funcionalidade central de um encurtador de URLs, focando em uma arquitetura limpa e escalável.
+| | |
+| :--- | :--- |
+| 🚀 **Produção (Swagger UI)** | [api.url-shortener.siyfred.dev/swagger-ui](https://api.url-shortener.siyfred.dev/swagger-ui/index.html) |
+| 🖥️ **Frontend (Next.js)** | [github.com/siyFred/url-shortener-web](https://github.com/siyFred/url-shortener-web) |
 
-* **Criação de Links:** Permite que um cliente envie uma URL longa e receba uma URL curta única de volta.
-* **Redirecionamento:** Resolve a URL curta e redireciona o usuário para a URL longa original.
-* **Pronto para o Cliente:** A API está configurada com CORS para permitir requisições de um frontend.
+## Sumário
 
-## Tecnologias Usadas
+- [Destaques](#destaques)
+- [Arquitetura](#arquitetura)
+- [Decisões técnicas](#decisões-técnicas)
+- [Trade-offs e pontos de atenção](#trade-offs-e-pontos-de-atenção)
+- [Stack](#stack)
+- [API](#api)
+- [Executando localmente](#executando-localmente)
+- [Testes](#testes)
+- [CI/CD e deploy](#cicd-e-deploy)
+- [Organização dos repositórios](#organização-dos-repositórios)
+- [Roadmap](#roadmap)
 
-* **Java 21**
-* **Spring Boot 3**
-* **Spring Data JPA (Hibernate)**
-* **PostgreSQL 17**
-* **Docker & Docker Compose** (Apenas banco de dados. Para desenvolvimento)
-* **Maven**
+---
 
-## Como Rodar Localmente
+## Destaques
 
-Você precisará ter um [JDK 21](https://adoptium.net/temurin/releases/?version=21) instalado.
-A aplicação se conecta ao banco de dados usando as configurações em `src/main/resources/application.yaml`.
-Este arquivo está configurado para usar variáveis de ambiente, com valores padrão para desenvolvimento local.
+- **Redirecionamento sem tocar o banco** no happy path: cache-aside com Redis.
+- **Zero verificação de colisão**: o código curto é derivado deterministicamente do ID sequencial (Base62).
+- **Analytics fora do caminho crítico**: cliques são publicados no RabbitMQ e contabilizados de forma assíncrona.
+- **Proteção contra cache stampede** com lock distribuído em links recém-criados e muito acessados.
+- **Testes com infraestrutura real**: PostgreSQL, Redis e RabbitMQ via Testcontainers, também no CI.
+- **Deploy automatizado** do push na `main` até a instância EC2, com HTTPS gerenciado pelo Caddy.
 
-* `DB_URL`: A URL de conexão JDBC.
-    * *Padrão: `jdbc:postgresql://localhost:5432/urlshortener_db`*
-* `DB_USERNAME`: O usuário do banco.
-    * *Padrão: `postgres`*
-* `DB_PASSWORD`: A senha do banco.
-    * *Padrão: `postgres`*
+---
 
-Você pode rodar o banco de dados de duas formas:
+## Arquitetura
 
-### Opção 1: Rodar com Docker (Recomendado para desenvolvimento e testes locais)
+### Visão geral dos componentes
 
-Esta é a forma mais rápida de iniciar, graças à configuração do `docker-compose.yml`, mas não é recomendada em produção.
+```mermaid
+flowchart LR
+    C["Cliente / Frontend<br/>(Next.js)"] -->|HTTPS| P["Caddy<br/>TLS + Reverse Proxy"]
+    P --> A["Spring Boot API"]
+    A <-->|"cache + lock"| R[("Redis")]
+    A <-->|"persistência"| D[("PostgreSQL")]
+    A -->|"publica ClickEvent"| Q{{"RabbitMQ"}}
+    Q -->|"@RabbitListener"| A
+```
 
-**1. Clone o repositório:**
+### Fluxo de escrita (criação do link)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Cliente
+    participant API as Spring Boot API
+    participant DB as PostgreSQL
+
+    User->>API: POST /api/shorten {longUrl}
+    API->>DB: INSERT url (ID sequencial gerado pelo banco)
+    DB-->>API: id
+    API->>API: Base62(id) → shortCode
+    API->>DB: UPDATE short_code
+    API-->>User: 200 OK {shortUrl}
+```
+
+### Fluxo de leitura (redirecionamento e analytics)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Cliente
+    participant API as Spring Boot API
+    participant Redis as Redis
+    participant DB as PostgreSQL
+    participant MQ as RabbitMQ
+
+    User->>API: GET /{shortCode}
+    API->>Redis: GET shortCode
+    alt Cache hit
+        Redis-->>API: longUrl
+    else Cache miss
+        Redis-->>API: null
+        API->>Redis: Adquire lock distribuído (anti-stampede)
+        API->>DB: SELECT longUrl WHERE short_code = ?
+        DB-->>API: longUrl
+        API->>Redis: SET shortCode → longUrl (TTL)
+    end
+    API--)MQ: Publica ClickEvent (assíncrono)
+    API-->>User: 301 Moved Permanently (Location: longUrl)
+    MQ--)API: Listener consome o evento em background
+    API->>DB: UPDATE click_count = click_count + 1
+```
+
+> O usuário recebe o redirecionamento **antes** de a contagem de cliques ser persistida: a latência da rota crítica não depende do `UPDATE`.
+
+---
+
+## Decisões técnicas
+
+| Decisão | Motivação | Custo |
+| :--- | :--- | :--- |
+| **Base62 derivado do ID sequencial** | Elimina colisões por construção; dispensa checagem no banco antes do `INSERT` e produz códigos curtos. | Códigos previsíveis (ver [trade-offs](#trade-offs-e-pontos-de-atenção)). Alternativas: hash truncado ou UUID, que exigem tratamento de colisão. |
+| **Cache-aside com Redis** | Em *cache hit*, o `301` é devolvido sem abrir conexão de leitura no PostgreSQL. | Janela de inconsistência controlada por TTL. |
+| **Lock distribuído no *cache miss*** | Evita *cache stampede*: muitas requisições simultâneas ao mesmo link ainda não cacheado não derrubam o banco. | Complexidade adicional e dependência do Redis. |
+| **Contagem de cliques via RabbitMQ** | Incrementar o contador a cada acesso geraria contenção de linha (*row-level locking*) em URLs populares. O controller só publica a mensagem e encerra a requisição. | Contagem eventualmente consistente. |
+| **Testcontainers em vez de mocks de infraestrutura** | Valida serialização de mensagens, queries e integração real com Redis/RabbitMQ no mesmo pipeline do CI. | Testes mais lentos que puramente unitários e dependentes de Docker. |
+| **Imagem Docker multi-stage + GHCR** | Imagem final enxuta e artefato versionado e reproduzível. | Exige gerenciamento de credenciais do registry no CI. |
+
+---
+
+## Trade-offs e pontos de atenção
+
+Registro das limitações conhecidas e de possíveis evoluções arquiteturais:
+
+- **`301` é cacheado pelo navegador.** Após o primeiro acesso, o mesmo navegador pode redirecionar sem consultar a API, o que **subestima a contagem de cliques**. Usar `302`/`307` troca esse ganho de cache no cliente por analytics mais fiel.
+- **IDs sequenciais geram códigos enumeráveis.** Alguém pode percorrer links criados por outros. Mitigações possíveis: embaralhar o alfabeto Base62, usar uma biblioteca de ofuscação de IDs (ex.: Sqids) ou aplicar rate limiting (ver [Roadmap](#roadmap)).
+- **Criação em duas etapas (`INSERT` + `UPDATE`).** O `shortCode` depende do ID gerado pelo banco, então ambas as escritas devem ocorrer na mesma transação para não deixar registros sem código.
+- **Entrega de mensagens *at-least-once*.** Reentregas do RabbitMQ podem incrementar o contador mais de uma vez; idempotência por evento e *dead-letter queue* são evoluções naturais.
+- **`clickCount` é eventualmente consistente.** Lê-lo imediatamente após o redirecionamento pode retornar um valor ainda não atualizado.
+
+---
+
+## Stack
+
+| Camada | Tecnologias |
+| :--- | :--- |
+| **Core** | Java 21, Spring Boot 3, Spring Data JPA (Hibernate), Maven |
+| **Dados e mensageria** | PostgreSQL 17, Spring Data Redis (Redis 8), Spring AMQP (RabbitMQ 3.13) |
+| **Testes** | JUnit 5, Mockito, Testcontainers |
+| **Infraestrutura** | Docker, Docker Compose, Caddy, GitHub Actions, GHCR, AWS EC2 |
+| **Documentação da API** | OpenAPI / Swagger UI |
+
+---
+
+## API
+
+A documentação interativa completa está no [Swagger UI](https://api.url-shortener.siyfred.dev/swagger-ui/index.html).
+
+### `POST /api/shorten` — Encurtar URL
+
+```bash
+curl -X POST https://api.url-shortener.siyfred.dev/api/shorten \
+  -H "Content-Type: application/json" \
+  -d '{"longUrl": "https://github.com/siyFred"}'
+```
+
+**Resposta (`200 OK`):**
+
+```json
+{
+  "shortUrl": "https://api.url-shortener.siyfred.dev/aB3x9"
+}
+```
+
+### `GET /{shortCode}` — Redirecionar
+
+```bash
+curl -i https://api.url-shortener.siyfred.dev/aB3x9
+```
+
+| Status | Descrição |
+| :--- | :--- |
+| `301 Moved Permanently` | Redireciona para a URL original (header `Location`) e publica o evento de clique. |
+| `404 Not Found` | `shortCode` inexistente. |
+
+---
+
+## Executando localmente
+
+### Pré-requisitos
+
+- Docker e Docker Compose
+- JDK 21 (opcional, apenas para rodar fora do container)
+
+### Opção 1 — Stack completa (API + Postgres + Redis + RabbitMQ)
+
 ```bash
 git clone https://github.com/siyFred/url-shortener-api.git
 cd url-shortener-api
-```
-
-**2. Inicie o Banco de Dados (PostgreSQL):** (É necessário ter o Docker instalado e rodando).
-
-```bash
-docker compose up -d postgres
-```
-
-O docker-compose.yml irá criar o banco `urlshortener_db` com o usuário `postgres` e senha `postgres` na porta `5432`.
-
-**3. Rode a Aplicação Spring Boot:**
-
-Abra o projeto na sua IDE (a utilizada por mim foi o IntelliJ) e rode a classe principal UrlShortenerApplication.java.
-
-### Opção 2: Rodar com PostgreSQL Local (Sem Docker)
-
-Esta forma requer que você tenha o PostgreSQL instalado na sua máquina.
-
-**1. Clone o repositório:**
-```bash
-git clone https://github.com/siyFred/url-shortener-api.git
-cd url-shortener-api
-```
-
-**2. Prepare seu Banco de Dados Local:** 
-
-Rode seu serviço PostgreSQL. Você tem duas escolhas:
-
-* A) Criar um banco de dados chamado `urlshortener_db` e garanta que o usuário `postgres` com senha `postgres` tenha acesso a ele.
-
-* B) Usar qualquer banco/usuário/senha. Apenas defina as variáveis de ambiente `DB_URL`, `DB_USERNAME`, e `DB_PASSWORD` antes de rodar a aplicação.
-
-**3. Rode a Aplicação Spring Boot:**
-
-Abra o projeto na sua IDE (a utilizada por mim foi o IntelliJ) e rode a classe principal UrlShortenerApplication.java.
-
-### Opção 3: Rodar a Stack Completa com Docker (Simulação de Produção)
-
-Esta opção roda **tudo** (a API Spring Boot e o Banco de Dados) dentro de containers Docker. Isso é possível graças ao `Dockerfile` e ao `docker-compose.yml` de produção.
-
-**1. Clone o repositório:**
-```bash
-git clone https://github.com/siyFred/url-shortener-api.git
-cd url-shortener-api
-```
-
-**2. Rode o Docker Compose:**
-(É necessário ter o Docker instalado e rodando).
-```bash
 docker compose up --build
 ```
-* **`up`**: Inicia todos os serviços definidos no `docker-compose.yml` (o `postgres` e o `app`).
-* **`--build`**: Força o Docker a (re)compilar sua aplicação Spring Boot (`app`) usando o `Dockerfile`, garantindo que qualquer mudança no código seja incluída.
 
-O Docker irá:
-1.  Construir a imagem da sua API.
-2.  Iniciar o container do `postgres`.
-3.  Esperar o `postgres` ficar "saudável" (graças ao `healthcheck`).
-4.  Iniciar o container da sua `app` (API).
+- API: `http://localhost:8080`
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 
-Sua API estará disponível em `http://localhost:8080`.
+### Opção 2 — Apenas a infraestrutura, com a API pela IDE
 
-## Compilando e Rodando (Sem IDE)
-
-Se você preferir compilar e rodar a aplicação via linha de comando:
-
-**1. Garanta que o Banco de Dados esteja rodando.**
-(Use a Opção 1 ou 2 da seção anterior).
-
-**2. Compile e Empacote o Projeto.** (Use o Maven Wrapper (`mvnw`), que já vem com o projeto.)
-
-*No Linux/macOS:*
 ```bash
-./mvnw clean package
+docker compose up -d postgres redis rabbitmq
+./mvnw spring-boot:run
 ```
 
-*No Windows (CMD/PowerShell):*
+### Variáveis de ambiente
+
+Os valores padrão em `src/main/resources/application.yaml` já funcionam para o ambiente local:
+
+| Variável | Descrição | Padrão (local) |
+| :--- | :--- | :--- |
+| `DB_URL` | JDBC URL do PostgreSQL | `jdbc:postgresql://localhost:5432/urlshortener_db` |
+| `DB_USERNAME` | Usuário do banco | `postgres` |
+| `DB_PASSWORD` | Senha do banco | `postgres` |
+| `SPRING_DATA_REDIS_HOST` | Host do Redis | `localhost` |
+| `SPRING_RABBITMQ_HOST` | Host do RabbitMQ | `localhost` |
+| `APP_BASE_URL` | Domínio base usado para montar o link curto | `http://localhost:8080` |
+
+---
+
+## Testes
+
 ```bash
-./mvnw.cmd clean package
+./mvnw clean test
 ```
 
-Isso irá criar um arquivo `.jar` executável na pasta `target/`.
+> Requer Docker ativo, pois o Testcontainers sobe as instâncias reais de PostgreSQL, Redis e RabbitMQ.
 
-**3. Rode a Aplicação:**
-```bash
-java -jar target/url-shortener-api-0.0.1-SNAPSHOT.jar
-```
-*(Nota: O nome do arquivo .jar pode variar. Verifique o nome exato na pasta `target/`.)*
+| Tipo | Ferramentas | O que valida |
+| :--- | :--- | :--- |
+| **Unitários** (camada de serviço) | JUnit 5 + Mockito | Cenários de *cache hit/miss* e formatação de URLs, de forma isolada. |
+| **Integração** | JUnit 5 + Testcontainers | Queries reais no PostgreSQL, comportamento do Redis e serialização/consumo de mensagens no RabbitMQ. |
 
-Se o seu banco não estiver usando os valores padrão, lembre-se de definir as variáveis de ambiente antes de rodar o comando:
+A mesma suíte roda no pipeline de CI a cada push.
 
-*No Linux/macOS:*
-```bash
-export DB_URL="jdbc:postgresql://host:porta/meu_banco"
-export DB_USERNAME="meu_usuario"
-export DB_PASSWORD="minha_senha"
-java -jar target/url-shortener-api-0.0.1-SNAPSHOT.jar
-```
+---
 
-*No Windows (CMD/PowerShell):*
-```bash
-$env:DB_URL="jdbc:postgresql://host:porta/meu_banco"
-$env:DB_USERNAME="meu_usuario"
-$env:DB_PASSWORD="minha_senha"
-java -jar target/url-shortener-api-0.0.1-SNAPSHOT.jar
+## CI/CD e deploy
+
+```mermaid
+flowchart LR
+    A["git push → main"] --> B["GitHub Actions"]
+    B --> C["Testes<br/>(Testcontainers)"]
+    C --> D["Build Docker<br/>multi-stage"]
+    D --> E[("GHCR")]
+    E --> F["Deploy via SSH"]
+    F --> G["AWS EC2<br/>Docker Compose + Caddy (HTTPS)"]
 ```
 
-## REST API Endpoints
+A cada push na `main`, o pipeline executa os testes, constrói a imagem, publica no GitHub Container Registry e atualiza os containers na instância EC2 por SSH. O certificado TLS é emitido e renovado automaticamente pelo Caddy.
 
-### 1. Criar um Link Curto
+---
 
-Cria uma nova URL encurtada.
+## Organização dos repositórios
 
-* **Método:** `POST`
-* **Endpoint:** `/api/shorten`
-* **Body (JSON):**
-    ```json
-    {
-      "longUrl": "https://www.google.com"
-    }
-    ```
-* **Resposta (200 OK):**
-    ```json
-    {
-      "shortUrl": "http://localhost:8080/abcdefg"
-    }
-    ```
+O projeto segue uma abordagem **multirepo**, com ciclos de vida e deploys independentes:
 
-### 2. Redirecionar para URL Longa
+| Repositório | Responsabilidade |
+| :--- | :--- |
+| [`url-shortener-api`](https://github.com/siyFred/url-shortener-api) (este) | Regras de negócio, persistência, cache, mensageria e infraestrutura de deploy. |
+| [`url-shortener-web`](https://github.com/siyFred/url-shortener-web) | Interface web em Next.js que consome esta API. |
 
-Redireciona o usuário para a URL original.
+---
 
-* **Método:** `GET`
-* **Endpoint:** `/{shortCode}` (ex: `http://localhost:8080/abcdefg`)
-* **Resposta:**
-    * `301 MOVED_PERMANENTLY`: Redireciona o navegador para a `longUrl` correspondente.
-    * `404 NOT_FOUND`: Se o `shortCode` não existir.
+## Roadmap
 
-## Tasks (Roadmap)
+- [ ] Autenticação stateless com Spring Security (JWT) para gestão de links por usuário.
+- [ ] Listagem paginada e remoção de links (`GET /api/links`, `DELETE /api/links/{id}`).
+- [ ] Rate limiting por IP na criação de links, usando Redis.
+- [ ] Idempotência no consumo de eventos de clique e *dead-letter queue*.
+- [ ] Métricas e observabilidade (Micrometer + Prometheus/Grafana).
+- [ ] Testes de carga (ex.: k6) com resultados publicados neste README.
 
-### MVP
-* [x] **API REST:** Criar endpoints `POST` (para criar) e `GET` (para redirecionar).
-* [x] **Banco de Dados:** Configurar `Spring Data JPA` para persistir os links no banco de dados `PostgreSQL`.
-* [x] **Infraestrutura:** Usar `Docker` para gerenciar o ambiente de banco de dados.
-* [x] **Formatação:** Garantir que as URLs sejam salvas em formato absoluto (com `https://`).
-* [x] **Conexão:** Configurar `CORS` para permitir o consumo pelo frontend.
+---
 
-### Escalamento do projeto
+## Autor
 
-#### *Nota: Testes devem e serão refatorados a cada fase do projeto*
-* [x] **Testes Unitários (JUnit + Mockito):**
-    * **O que:** Testar a camada de `Service` (`LinkService`) em isolamento.
-    * **Garantir que:** A lógica de `formatUrl` (adicionar `https://`) funciona.
-    * **Garantir que:** O `LinkService` chama o `linkRepository.save()` corretamente.
-* [x] **Testes de Integração (JUnit + Testcontainers):**
-    * **O que:** Testar o fluxo completo (`Controller` -> `Service` -> `Banco`).
-    * **Garantir que:** Uma chamada `POST /api/mvp/shorten` *realmente* salva a entidade no banco de dados do Testcontainer.
-
-* [x] **Otimização de Chaves (Base62)**
-    * Substituir a geração de `shortCode` (UUID) pelo algoritmo **Base62** baseado no ID da entidade, garantindo performance e ausência de colisões.
-
-  * [x] **Testes a Refatorar:**
-      * Modificar o Teste de Integração para validar que o `shortCode` salvo no banco é um Base62 válido e que a lógica de `INSERT` + `UPDATE` funciona.
-
-* [x] **Cache de Leitura (Redis)**
-    * Implementar **Redis** para cachear os redirecionamentos. A maioria das leituras (`GET`) será servida em milissegundos, sem tocar no PostgreSQL.
-
-* [x] **Testes a Adicionar:**
-    * Adicionar Testes Unitários ao `LinkService` (com Mockito) para validar o "cache hit" (a 2ª chamada não toca no `LinkRepository`) e o "cache miss" (a 1ª chamada toca no `LinkRepository`).
-    * Adicionar um Teste de Integração (com Testcontainers para Redis) que valida se o cache está sendo populado.
-
-* [x] **Analytics Assíncrono (RabbitMQ)**
-    * Adicionar contagem de cliques. Para não adicionar latência ao redirect, a lógica de `UPDATE` no banco será desacoplada usando **RabbitMQ**.
-
-* [x] **Testes a Adicionar:**
-    * Adicionar Testes de Integração (com Testcontainers para RabbitMQ) que validam:
-        1. Que o `GET /{shortCode}` (redirect) publica uma mensagem na fila.
-        2. Que o `RabbitMQ Listener` consome a mensagem e atualiza o `clickCount` no banco.
-
-* [ ] **Autenticação Segura e Dashboard**
-    * Implementar **Spring Security (JWT)** para permitir login e registro de usuários.
-    * Criar endpoints de CRUD (`GET /api/links`, `DELETE /api/links/{id}`) para um dashboard onde o usuário possa gerenciar seus próprios links.
-
-* [ ] **Testes a Refatorar:**
-    * Todos os Testes de Integração (`POST /api/...`, `DELETE /api/...`) precisarão ser refatorados para *primeiro* se autenticar (obter um token JWT) e incluir esse token na requisição.
-* [ ] **Testes a Adicionar:**
-    * Testar os novos endpoints de CRUD (para o dashboard).
-    * Testar os casos de falha (acesso a links privados, endpoints sem autenticação, etc.).
-
-* [ ] **Refatorar código e arquitetura:**
-    * Foco em preparar o código para produção e melhorar a manutenabilidade.
-    * Implementar validação de entrada, tratamento de erros, rate limiting, logging (logs estruturados talvez?), etc.
-
-* [ ] **Deploy em Container (Docker)**
-    * Criar o `Dockerfile` da aplicação Spring Boot para produção (usando multi-stage builds).
-    * Criar um `docker-compose.yml` de produção para orquestrar `API`, `PostgreSQL`, `Redis` e `RabbitMQ`.
+Desenvolvido por [**siyFred**](https://github.com/siyFred).
