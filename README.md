@@ -15,8 +15,8 @@ API RESTful de encurtamento de URLs projetada para **baixa latência no redireci
 
 | | |
 | :--- | :--- |
-| 🚀 **Produção (Swagger UI)** | [api.url-shortener.siyfred.dev/swagger-ui](https://api.url-shortener.siyfred.dev/swagger-ui/index.html) |
-| 🖥️ **Frontend (Next.js)** | [github.com/siyFred/url-shortener-web](https://url-shortener.siyfred.dev) |****
+| 🚀 **API em Produção (Swagger UI)** | [api.url-shortener.siyfred.dev/swagger-ui](https://api.url-shortener.siyfred.dev/swagger-ui/index.html) |
+| 🖥️ **Frontend em Produção (Next.js)** | [url-shortener.siyfred.dev](https://url-shortener.siyfred.dev) |
 | 📁 **Frontend (Repositório)** | [github.com/siyFred/url-shortener-web](https://github.com/siyFred/url-shortener-web) |
 
 ## Sumário

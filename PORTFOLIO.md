@@ -15,7 +15,8 @@ O sistema é dividido em duas camadas totalmente desacopladas, mantidas em repos
 2. **Backend (Java/Spring Boot):** Uma API estruturada com mensageria e cache, containerizada e publicada na AWS com HTTPS e deploy contínuo.
 
 **Links:**
-* API em produção (Swagger UI): https://api.url-shortener.siyfred.dev/swagger-ui/index.html
+* API em Produção (Swagger UI): https://api.url-shortener.siyfred.dev/swagger-ui/index.html
+* Frontend em Produção (Next.js): https://url-shortener.siyfred.dev
 * Backend: https://github.com/siyFred/url-shortener-api
 * Frontend: https://github.com/siyFred/url-shortener-web
 
