@@ -1,6 +1,8 @@
 ---
 title: "URL Shortener"
 description: "Plataforma Full-Stack de encurtamento de URLs em produção. Combina um frontend moderno em Next.js a uma API Java com foco em baixa latência, processamento assíncrono e entrega contínua na AWS."
+order: 1
+deploy-url: "https://url-shortener.siyfred.dev"
 stack: ["Java 21", "Spring Boot 3", "Next.js", "TypeScript", "PostgreSQL", "Redis", "RabbitMQ", "Testcontainers", "Docker", "GitHub Actions", "AWS EC2", "Caddy"]
 images: ["assets/capa.png"]
 featured-skills: ["Arquitetura Distribuída", "Mensageria Assíncrona", "Performance com Cache", "CI/CD com GitHub Actions", "Cloud (AWS)"]
