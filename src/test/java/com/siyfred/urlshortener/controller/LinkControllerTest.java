@@ -4,12 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.siyfred.urlshortener.dto.ShortenRequest;
 import com.siyfred.urlshortener.model.Link;
 import com.siyfred.urlshortener.repository.LinkRepository;
+import com.siyfred.urlshortener.service.LinkService;
 import com.siyfred.urlshortener.util.Base62;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -22,9 +25,17 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -54,6 +65,7 @@ public class LinkControllerTest {
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
         // não inicia listeners Rabbit durante o teste de controller
         registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
+        registry.add("app.cache.negative-ttl", () -> "2s");
     }
 
     @Autowired
@@ -68,9 +80,16 @@ public class LinkControllerTest {
     @Autowired
     private Base62 base62;
 
+    @Autowired
+    private CacheManager cacheManager;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
     @BeforeEach
     void setUp() {
         linkRepository.deleteAll();
+        cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
     }
 
     @Test
@@ -150,5 +169,82 @@ public class LinkControllerTest {
 
         // ASSERT
         verify(linkRepository, times(1)).findByShortCode("cached-key");
+    }
+
+    @Test
+    void redirectToLongUrl_concurrentRequests_shouldHitDatabaseOnce() throws Exception {
+        // ARRANGE
+        Link saved = linkRepository.save(new Link("https://example.com/stampede", "stampede1"));
+        doAnswer(inv -> {
+            Thread.sleep(200);
+            return Optional.of(saved);
+        }).when(linkRepository).findByShortCode("stampede1");
+
+        int threads = 50;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<String>> results = new ArrayList<>();
+
+        // ACT
+        for (int i = 0; i < threads; i++) {
+            results.add(pool.submit(() -> {
+                ready.countDown();
+                start.await();
+                var response = mockMvc.perform(get("/stampede1")).andReturn().getResponse();
+                return response.getStatus() + " " + response.getHeader("Location");
+            }));
+        }
+        ready.await();
+        start.countDown();
+
+        // ASSERT
+        for (Future<String> r : results) {
+            assertThat(r.get(30, TimeUnit.SECONDS)).isEqualTo("302 https://example.com/stampede");
+        }
+        pool.shutdown();
+        verify(linkRepository, times(1)).findByShortCode("stampede1");
+    }
+
+    @Test
+    void redirectToLongUrl_unknownCode_shouldUseNegativeCache_andQueryAgainAfterTtlExpires() throws Exception {
+        // ACT 1 & 2: duas chamadas sequenciais a um código inexistente -> apenas 1 consulta ao banco
+        mockMvc.perform(get("/nao-existe-neg")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/nao-existe-neg")).andExpect(status().isNotFound());
+        verify(linkRepository, times(1)).findByShortCode("nao-existe-neg");
+
+        // confirma que o TTL negativo no Redis é curto (~2s, via app.cache.negative-ttl) e separado do TTL de 7 dias
+        Long ttlSeconds = redisTemplate.getExpire(LinkService.LINKS_MISSING_CACHE + "::nao-existe-neg", TimeUnit.SECONDS);
+        assertThat(ttlSeconds).isBetween(1L, 2L);
+
+        // aguarda o TTL negativo expirar e confirma que o banco é consultado novamente
+        Thread.sleep(2500);
+        mockMvc.perform(get("/nao-existe-neg")).andExpect(status().isNotFound());
+        verify(linkRepository, times(2)).findByShortCode("nao-existe-neg");
+    }
+
+    @Test
+    @WithMockUser
+    void createShortUrl_shouldInvalidateNegativeCache_forCreatedCode() throws Exception {
+        // descobre o próximo ID da sequência do Postgres para prever o shortCode que será gerado
+        Link probe = linkRepository.save(new Link("https://probe.example", "probe"));
+        long nextId = probe.getId() + 1;
+        linkRepository.deleteAll();
+        String futureCode = base62.encode(nextId * 1181783497276652981L);
+
+        // 1) consulta o código antes de existir -> 404 e fica em cache negativo
+        mockMvc.perform(get("/" + futureCode)).andExpect(status().isNotFound());
+        assertThat(cacheManager.getCache(LinkService.LINKS_MISSING_CACHE).get(futureCode)).isNotNull();
+
+        // 2) cria o link correspondente
+        mockMvc.perform(post("/api/shorten")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ShortenRequest("https://google.com"))))
+                .andExpect(status().isOk());
+
+        // 3) consulta seguinte retorna o link (302) em vez de 404
+        mockMvc.perform(get("/" + futureCode))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://google.com"));
     }
 }

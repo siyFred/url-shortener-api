@@ -11,7 +11,7 @@
 ![JUnit 5](https://img.shields.io/badge/Tests-JUnit_5-25A162?logo=junit5&logoColor=white)
 ![Testcontainers](https://img.shields.io/badge/Tested_with-Testcontainers-2496ED?logo=docker&logoColor=white)
 
-API RESTful de encurtamento de URLs projetada para **baixa latência no redirecionamento**, **escrita desacoplada de métricas** e **resiliência sob tráfego concorrente**. O projeto é um estudo prático de arquitetura backend distribuída: cache-aside, mensageria assíncrona, locks distribuídos, testes de integração com infraestrutura real e entrega contínua.
+API RESTful de encurtamento de URLs projetada para **baixa latência no redirecionamento**, **escrita desacoplada de métricas** e **resiliência sob tráfego concorrente**. O projeto é um estudo prático de arquitetura backend: cache-aside (incluindo cache negativo), mensageria assíncrona, deduplicação no Redis, testes de integração com infraestrutura real e entrega contínua.
 
 | | |
 | :--- | :--- |
@@ -40,7 +40,7 @@ API RESTful de encurtamento de URLs projetada para **baixa latência no redireci
 - **Redirecionamento sem tocar o banco** no happy path: cache-aside com Redis.
 - **Zero verificação de colisão**: o código curto é derivado deterministicamente do ID sequencial (Base62).
 - **Analytics fora do caminho crítico**: cliques são publicados no RabbitMQ e contabilizados de forma assíncrona.
-- **Proteção contra cache stampede** com lock distribuído em links recém-criados e muito acessados.
+- **Proteção contra cache stampede e cache penetration**: requisições concorrentes ao mesmo `shortCode` em *cache miss* aguardam uma única consulta ao banco (sincronização por chave local à instância), e códigos inexistentes são cacheados por TTL curto (`60s`).
 - **Testes com infraestrutura real**: PostgreSQL, Redis e RabbitMQ via Testcontainers, também no CI.
 - **Deploy automatizado** do push na `main` até a instância EC2, com HTTPS gerenciado pelo Caddy.
 
@@ -54,7 +54,7 @@ API RESTful de encurtamento de URLs projetada para **baixa latência no redireci
 flowchart LR
     C["Cliente / Frontend<br/>(Next.js)"] -->|HTTPS| P["Caddy<br/>TLS + Reverse Proxy"]
     P --> A["Spring Boot API"]
-    A <-->|"cache + lock"| R[("Redis")]
+    A <-->|"cache"| R[("Redis")]
     A <-->|"persistência"| D[("PostgreSQL")]
     A -->|"publica ClickEvent"| Q{{"RabbitMQ"}}
     Q -->|"@RabbitListener"| A
@@ -89,20 +89,32 @@ sequenceDiagram
     participant MQ as RabbitMQ
 
     User->>API: GET /{shortCode}
-    API->>Redis: GET shortCode
-    alt Cache hit
-        Redis-->>API: longUrl
-    else Cache miss
+    API->>Redis: GET links::{shortCode} / links-missing::{shortCode}
+    alt Cache hit (link existente)
+        Redis-->>API: Link (longUrl)
+        API--)MQ: Publica ClickEvent (assíncrono)
+        API-->>User: 301 Moved Permanently (Location: longUrl)
+        MQ--)API: Listener consome o evento em background
+        API->>DB: UPDATE click_count = click_count + 1
+    else Cache negativo (código inexistente)
+        Redis-->>API: missing (TTL 60s)
+        API-->>User: 404 Not Found
+    else Cache miss (sincronizado por shortCode na JVM)
         Redis-->>API: null
-        API->>Redis: Adquire lock distribuído (anti-stampede)
-        API->>DB: SELECT longUrl WHERE short_code = ?
-        DB-->>API: longUrl
-        API->>Redis: SET shortCode → longUrl (TTL)
+        API->>DB: SELECT * FROM links WHERE short_code = ? (consulta única por chave)
+        alt Encontrado
+            DB-->>API: Link
+            API->>Redis: SET links::{shortCode} (TTL 7d)
+            API--)MQ: Publica ClickEvent (assíncrono)
+            API-->>User: 301 Moved Permanently (Location: longUrl)
+            MQ--)API: Listener consome o evento em background
+            API->>DB: UPDATE click_count = click_count + 1
+        else Não encontrado
+            DB-->>API: empty
+            API->>Redis: SET links-missing::{shortCode} (TTL 60s)
+            API-->>User: 404 Not Found
+        end
     end
-    API--)MQ: Publica ClickEvent (assíncrono)
-    API-->>User: 301 Moved Permanently (Location: longUrl)
-    MQ--)API: Listener consome o evento em background
-    API->>DB: UPDATE click_count = click_count + 1
 ```
 
 > O usuário recebe o redirecionamento **antes** de a contagem de cliques ser persistida: a latência da rota crítica não depende do `UPDATE`.
@@ -115,7 +127,7 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | **Base62 derivado do ID sequencial** | Elimina colisões por construção; dispensa checagem no banco antes do `INSERT` e produz códigos curtos. | Códigos previsíveis (ver [trade-offs](#trade-offs-e-pontos-de-atenção)). Alternativas: hash truncado ou UUID, que exigem tratamento de colisão. |
 | **Cache-aside com Redis** | Em *cache hit*, o `301` é devolvido sem abrir conexão de leitura no PostgreSQL. | Janela de inconsistência controlada por TTL. |
-| **Lock distribuído no *cache miss*** | Evita *cache stampede*: muitas requisições simultâneas ao mesmo link ainda não cacheado não derrubam o banco. | Complexidade adicional e dependência do Redis. |
+| **Sincronização por chave no *cache miss* + cache negativo** | Requisições concorrentes ao mesmo `shortCode` ainda não cacheado aguardam a primeira consulta ao PostgreSQL (*single-flight* local à instância), evitando *cache stampede*; códigos inexistentes são cacheados no cache `links-missing` por TTL curto (`60s`), evitando que varreduras de códigos enumeráveis sobrecarreguem o banco (*cache penetration*). | A sincronização é local à JVM (para múltiplas instâncias seria necessário um lock distribuído). Links inexistentes têm janela de até `60s` no cache negativo, mitigada pela invalidação após o commit na criação do link. |
 | **Contagem de cliques via RabbitMQ** | Incrementar o contador a cada acesso geraria contenção de linha (*row-level locking*) em URLs populares. O controller só publica a mensagem e encerra a requisição. | Contagem eventualmente consistente. |
 | **Testcontainers em vez de mocks de infraestrutura** | Valida serialização de mensagens, queries e integração real com Redis/RabbitMQ no mesmo pipeline do CI. | Testes mais lentos que puramente unitários e dependentes de Docker. |
 | **Imagem Docker multi-stage + GHCR** | Imagem final enxuta e artefato versionado e reproduzível. | Exige gerenciamento de credenciais do registry no CI. |
@@ -131,6 +143,7 @@ Registro das limitações conhecidas e de possíveis evoluções arquiteturais:
 - **Criação em duas etapas (`INSERT` + `UPDATE`).** O `shortCode` depende do ID gerado pelo banco, então ambas as escritas devem ocorrer na mesma transação para não deixar registros sem código.
 - **Entrega de mensagens *at-least-once*.** Reentregas do RabbitMQ podem incrementar o contador mais de uma vez; idempotência por evento e *dead-letter queue* são evoluções naturais.
 - **`clickCount` é eventualmente consistente.** Lê-lo imediatamente após o redirecionamento pode retornar um valor ainda não atualizado.
+- **Sincronização de *cache miss* local à JVM e janela do cache negativo.** A coordenação que agrupa requisições simultâneas ao mesmo `shortCode` em *cache miss* usa um mapa concorrente em memória (`ConcurrentHashMap` + `CompletableFuture`), suficiente para o deploy atual em instância única, mas que não coordena múltiplas réplicas da API (para isso seria necessário um lock distribuído). Além disso, códigos inexistentes ficam em cache negativo por até `60s` (`app.cache.negative-ttl`); a criação de um link remove essa entrada após o commit da transação, restando apenas uma janela residual caso uma leitura concorrente consulte o código exatamente antes do commit.
 
 ---
 
@@ -271,6 +284,8 @@ O projeto segue uma abordagem **multirepo**, com ciclos de vida e deploys indepe
 - [ ] Idempotência no consumo de eventos de clique e *dead-letter queue*.
 - [ ] Métricas e observabilidade (Micrometer + Prometheus/Grafana).
 - [ ] Testes de carga (ex.: k6) com resultados publicados neste README.
+- [ ] Lock distribuído no *cache miss* (necessário para múltiplas instâncias).
+- [ ] Rate limiting por IP também na rota de redirecionamento.
 
 ---
 

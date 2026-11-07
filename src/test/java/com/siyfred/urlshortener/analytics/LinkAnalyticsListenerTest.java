@@ -12,9 +12,12 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -26,7 +29,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 public class LinkAnalyticsListenerTest extends BaseIT {
     @Container
-    static GenericContainer<?> rabbitmq = new GenericContainer<>(DockerImageName.parse("rabbitmq:3.13-management-alpine")).withExposedPorts(5672);
+    static GenericContainer<?> rabbitmq = new GenericContainer<>(DockerImageName.parse("rabbitmq:3.13-management-alpine"))
+            .withExposedPorts(5672)
+            .waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1))
+            .withStartupTimeout(Duration.ofSeconds(90));
 
     @DynamicPropertySource
     static void dynamicProperties(DynamicPropertyRegistry registry) {

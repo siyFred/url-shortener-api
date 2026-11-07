@@ -36,13 +36,10 @@ String shortCode = base62.encode(obfuscatedId);
 ```
 **Por quê:** Evita o processamento repetitivo de checagem de colisão no banco (comum em geradores randômicos) e garante resolução determinística, sem expor a sequência crua dos IDs.
 
-### 2) Camada de Cache com Redis (Cache-Aside)
-O lookup por `shortCode` no redirecionamento (`GET /{shortCode}`) é o endpoint mais quente da aplicação. Para reduzir a carga no PostgreSQL, os requests são interceptados por Redis: em *cache hit*, o redirecionamento é servido sem tocar o banco; em *cache miss*, a aplicação consulta o PostgreSQL e popula o cache com TTL.
-```java
-@Cacheable(value = "links", key = "#shortCode", unless = "#result == null")
-public Optional<Link> getLongUrlByShortCode(String shortCode)
-```
-Um lock distribuído protege links recém-criados e muito acessados contra *cache stampede*.
+### 2) Camada de Cache com Redis (Cache-Aside + Cache Negativo)
+O lookup por `shortCode` no redirecionamento (`GET /{shortCode}`) é o endpoint mais quente da aplicação. Para reduzir a carga no PostgreSQL, os requests passam pelo Redis usando dois caches com TTLs distintos: `links` (7 dias para códigos existentes) e `links-missing` (`60s`, configurável via `app.cache.negative-ttl`, para códigos inexistentes, evitando que varreduras de códigos enumeráveis atinjam o banco a cada chamada). Quando um link é criado, eventual entrada negativa daquele `shortCode` é invalidada após o commit da transação.
+
+Em *cache miss*, requisições concorrentes ao mesmo `shortCode` aguardam a primeira consulta ao banco e reutilizam o resultado (*single-flight* por chave com `ConcurrentHashMap` + `CompletableFuture`). Essa sincronização é local à JVM (adequada ao deploy atual em uma única instância EC2; com múltiplas instâncias seria necessário um lock distribuído).
 
 ### 3) Analytics Assíncrono com RabbitMQ
 Ao invés de travar a thread HTTP de redirecionamento do usuário para contabilizar "um clique" no banco, o sistema publica um evento em uma fila RabbitMQ e responde instantaneamente ao cliente.
@@ -52,7 +49,7 @@ rabbitTemplate.convertAndSend(RabbitMQConfig.CLICKS_QUEUE_NAME, clickMessage);
 Um worker (`@RabbitListener`) consome as mensagens e consolida a contagem em background, isolando totalmente a UX da sobrecarga analítica e evitando contenção de linha (*row-level locking*) em URLs populares.
 
 ### 4) Deduplicação de Cliques em Janela Curta
-Para evitar que bots ou double-clicks inflem o analytics artificialmente, o listener usa o Redis (`SETNX` com TTL) para barrar eventos idênticos (`shortCode + ip + userAgent`) dentro de uma janela de milissegundos.
+Para evitar que bots ou double-clicks inflem o analytics artificialmente, o listener usa o Redis (`SETNX` com TTL de 5 segundos, `Duration.ofSeconds(5)`) na chave `lock:click:{shortCode}:{ip}:{userAgent}` para barrar eventos idênticos dentro dessa janela de 5 segundos.
 
 ---
 

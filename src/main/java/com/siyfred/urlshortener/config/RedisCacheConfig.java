@@ -1,9 +1,12 @@
 package com.siyfred.urlshortener.config;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.siyfred.urlshortener.service.LinkService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.cache.RedisCacheManagerBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -41,6 +44,15 @@ public class RedisCacheConfig {
                 .disableCachingNullValues()
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(serializer));
+    }
+
+    /** Cache negativo ("não existe") com TTL curto e separado do TTL de 7 dias dos links existentes. */
+    @Bean
+    public RedisCacheManagerBuilderCustomizer missingLinksCacheCustomizer(
+            RedisCacheConfiguration defaultConfig,
+            @Value("${app.cache.negative-ttl:60s}") Duration negativeTtl) {
+        return builder -> builder.withCacheConfiguration(
+                LinkService.LINKS_MISSING_CACHE, defaultConfig.entryTtl(negativeTtl));
     }
 
     @Bean
