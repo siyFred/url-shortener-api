@@ -71,7 +71,7 @@ public class LinkServiceTest {
         String expected_longUrl = "https://google.com";
         String expected_shortCode = "gE";
         long expected_id = 1000L;
-        long expected_obfuscated_id = expected_id * OBFUSCATION_PRIME;
+        long expected_obfuscated_id = (expected_id * OBFUSCATION_PRIME) & Long.MAX_VALUE;
 
         when(urlFormatter.formatUrl(incomplete_longUrl)).thenReturn(expected_longUrl);
 
@@ -161,7 +161,7 @@ public class LinkServiceTest {
         Link saved = new Link("https://google.com", shortCode);
         saved.setId(id);
         when(linkRepository.save(any(Link.class))).thenReturn(withId).thenReturn(saved);
-        when(base62.encode(id * OBFUSCATION_PRIME)).thenReturn(shortCode);
+        when(base62.encode((id * OBFUSCATION_PRIME) & Long.MAX_VALUE)).thenReturn(shortCode);
 
         TransactionSynchronizationManager.initSynchronization();
         try {
@@ -183,5 +183,27 @@ public class LinkServiceTest {
         Optional<Link> afterCreate = linkService.getLongUrlByShortCode(shortCode);
         assertTrue(afterCreate.isPresent());
         assertEquals("https://google.com", afterCreate.get().getLongUrl());
+    }
+
+    @Test
+    void createShortUrl_shouldGenerateValidUniqueShortCodes_whenIdMultipliedOverflows64Bits() {
+        LinkService serviceWithRealBase62 = new LinkService(linkRepository, new Base62(), urlFormatter, cacheManager);
+        when(urlFormatter.formatUrl(anyString())).thenReturn("https://example.com");
+
+        // IDs 8 e 9 causavam overflow para negativo sem a máscara & Long.MAX_VALUE
+        for (long id = 1L; id <= 20L; id++) {
+            long currentId = id;
+            when(linkRepository.save(any(Link.class))).thenAnswer(inv -> {
+                Link arg = inv.getArgument(0);
+                if (arg.getId() == null) {
+                    arg.setId(currentId);
+                }
+                return arg;
+            });
+
+            Link created = serviceWithRealBase62.createShortUrl("https://example.com");
+            assertNotNull(created.getShortCode());
+            assertFalse(created.getShortCode().isEmpty(), "O shortCode não pode ser vazio para o ID " + id);
+        }
     }
 }

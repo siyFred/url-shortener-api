@@ -109,7 +109,7 @@ public class LinkService {
         Link savedLink = linkRepository.save(link);
 
         long id = savedLink.getId();
-        long obfuscatedId = (id * OBFUSCATION_PRIME);
+        long obfuscatedId = (id * OBFUSCATION_PRIME) & Long.MAX_VALUE;
         String shortCode = base62.encode(obfuscatedId);
         savedLink.setShortCode(shortCode);
 
